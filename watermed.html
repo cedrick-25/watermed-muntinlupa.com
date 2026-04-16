@@ -1,0 +1,2838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WaterMed – Purified Water Refilling Station</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Nunito:wght@300;400;500;600;700&family=Bebas+Neue&family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+
+<!--
+╔══════════════════════════════════════════════════════╗
+║  GOOGLE APPS SCRIPT SETUP (paste in script.google.com) ║
+╚══════════════════════════════════════════════════════╝
+Steps:
+1. Open your Google Sheet → Extensions → Apps Script
+2. Paste the code below, click Save, then Deploy > New Deployment
+3. Type: Web App | Execute as: Me | Who has access: Anyone
+4. Copy the Web App URL and set SHEET_URL constant below in the JS
+
+─── APPS SCRIPT CODE ───────────────────────────────────
+function doGet(e) {
+  const action = e.parameter.action;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (action === 'getCustomers') {
+    let sheet = ss.getSheetByName('Customers');
+    if (!sheet || sheet.getLastRow() < 2) return out([]);
+    const data = sheet.getDataRange().getValues();
+    const hdrs = data[0];
+    const rows = data.slice(1).map(row => { const o={}; hdrs.forEach((h,i)=>o[h]=row[i]); return o; });
+    return out(rows);
+  }
+  return out({error:'unknown'});
+}
+function doPost(e) {
+  const body = JSON.parse(e.postData.contents);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('Customers');
+  if (!sh) {
+    sh = ss.insertSheet('Customers');
+    sh.appendRow(['id','name','email','phone','address','password','since','totalOrders','totalSpent','lastOrder','notes','rewarded']);
+  }
+  const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];
+  const rows = sh.getDataRange().getValues();
+  const data = body.data || {};
+  const idIndex = headers.indexOf('id');
+
+  if (body.action === 'addCustomer' || body.action === 'upsertCustomer') {
+    const rowIndex = rows.findIndex((row, index) => index > 0 && String(row[idIndex]) === String(data.id));
+    const rowValues = headers.map(h => data[h] !== undefined ? data[h] : '');
+    if (rowIndex > 0) sh.getRange(rowIndex + 1, 1, 1, rowValues.length).setValues([rowValues]);
+    else sh.appendRow(rowValues);
+    return out({success:true});
+  }
+
+  if (body.action === 'deleteCustomer') {
+    const rowIndex = rows.findIndex((row, index) => index > 0 && String(row[idIndex]) === String(data.id));
+    if (rowIndex > 0) sh.deleteRow(rowIndex + 1);
+    return out({success:true});
+  }
+  return out({error:'unknown'});
+}
+function out(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
+────────────────────────────────────────────────────────
+-->
+
+<style>
+/* ══════ PUBLIC VARIABLES ══════ */
+:root{
+  --b50:#EBF5FF;--b100:#C3DFF8;--b200:#8EC4F0;--b400:#3A9FE8;--b600:#1571B9;--b700:#0F5A96;--b800:#0A3D6B;
+  --t400:#17C3A3;--t600:#0F9A82;--a400:#F5A623;
+  --g50:#F7F9FC;--g100:#EDF0F5;--g200:#D8DEE8;--g400:#8E99B0;--g500:#6B7896;--g600:#4A5568;--g800:#1A2340;
+  --white:#fff;
+  --fh:'Syne',sans-serif;--fb:'Nunito',sans-serif;
+  --rsm:8px;--rmd:14px;--rlg:22px;--rxl:32px;
+  --sh:0 2px 12px rgba(21,113,185,.09);--shm:0 8px 36px rgba(21,113,185,.16);
+}
+/* ══════ ADMIN VARIABLES (inherit into adminView children) ══════ */
+#adminView{
+  --bg:#0D1117;--bg2:#161B22;--bg3:#1C2330;
+  --border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
+  --blue:#2F81F7;--blue-dim:rgba(47,129,247,.15);
+  --teal:#3FB950;--teal-dim:rgba(63,185,80,.13);
+  --amber:#F0B429;--amber-dim:rgba(240,180,41,.13);
+  --red:#F85149;--red-dim:rgba(248,81,73,.13);
+  --purple:#BC8CFF;--purple-dim:rgba(188,140,255,.13);
+  --adm-text:#E6EDF3;--muted:#8B949E;
+  --font-h:'Bebas Neue',sans-serif;--font-m:'DM Mono',monospace;--font-b:'Plus Jakarta Sans',sans-serif;
+  --r:10px;--r2:16px;
+}
+/* ══════ VIEW TOGGLE ══════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:var(--fb);background:var(--white);color:var(--g800);overflow-x:hidden;line-height:1.65;}
+#publicView{display:block;}
+#adminView{display:none;height:100vh;overflow:hidden;flex-direction:row;}
+body.admin-mode #publicView{display:none;}
+body.admin-mode #adminView{display:flex;}
+body.admin-mode{overflow:hidden;}
+a{color:inherit;text-decoration:none;}
+button{cursor:pointer;font-family:inherit;border:none;background:none;}
+img{max-width:100%;display:block;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:#f0f0f0;}
+::-webkit-scrollbar-thumb{background:var(--b200);border-radius:3px;}
+
+/* ══════════════════════════════════════════════
+   PUBLIC SITE CSS
+══════════════════════════════════════════════ */
+.container{max-width:1180px;margin:0 auto;padding:0 24px;}
+.section-chip{display:inline-flex;align-items:center;gap:6px;background:var(--b50);color:var(--b600);font-family:var(--fh);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 14px;border-radius:50px;margin-bottom:16px;}
+.section-title-pub{font-family:var(--fh);font-size:clamp(26px,3.5vw,40px);font-weight:800;color:var(--g800);line-height:1.15;margin-bottom:12px;}
+.section-sub{font-size:16px;color:var(--g600);line-height:1.75;max-width:520px;}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;background:var(--b600);color:#fff;font-family:var(--fh);font-weight:700;font-size:15px;padding:13px 28px;border-radius:50px;transition:all .2s;box-shadow:0 4px 18px rgba(21,113,185,.3);}
+.btn-primary:hover{background:var(--b800);transform:translateY(-2px);}
+.btn-outline{display:inline-flex;align-items:center;gap:8px;background:transparent;color:var(--b600);font-family:var(--fh);font-weight:700;font-size:15px;padding:12px 26px;border-radius:50px;border:2px solid var(--b200);transition:all .2s;}
+.btn-outline:hover{background:var(--b50);}
+.btn-teal{display:inline-flex;align-items:center;gap:8px;background:var(--t400);color:#fff;font-family:var(--fh);font-weight:700;font-size:14px;padding:11px 24px;border-radius:50px;transition:all .2s;}
+.btn-teal:hover{background:var(--t600);}
+/* TOPBAR */
+#topbar-announce{background:var(--b600);color:#fff;text-align:center;padding:10px 20px;font-size:13px;font-weight:500;position:relative;}
+.announce-close{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:18px;cursor:pointer;opacity:.7;transition:opacity .15s;}
+.announce-close:hover{opacity:1;}
+/* NAVBAR */
+#navbar{position:sticky;top:0;z-index:900;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-bottom:1px solid var(--g100);transition:box-shadow .3s;}
+#navbar.shadow{box-shadow:0 2px 20px rgba(0,0,0,.08);}
+.nav-inner{display:flex;align-items:center;height:66px;}
+.nav-logo{font-family:var(--fh);font-size:21px;font-weight:800;color:var(--b800);display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.nav-logo .drop{width:32px;height:32px;background:var(--b600);border-radius:50% 50% 50% 0;display:flex;align-items:center;justify-content:center;}
+.nav-logo .drop svg{width:16px;height:16px;fill:white;}
+.nav-logo .sub-name{font-size:10px;font-weight:600;color:var(--g400);display:block;letter-spacing:.04em;line-height:1;margin-top:1px;}
+.nav-menu{display:flex;align-items:center;gap:4px;margin:0 auto;list-style:none;}
+.nav-menu a{font-size:14px;font-weight:600;color:var(--g600);padding:8px 14px;border-radius:var(--rsm);transition:all .15s;}
+.nav-menu a:hover{color:var(--b600);background:var(--b50);}
+.nav-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.cart-btn{position:relative;width:40px;height:40px;border-radius:var(--rsm);background:var(--g50);border:1px solid var(--g100);display:flex;align-items:center;justify-content:center;font-size:18px;transition:all .15s;cursor:pointer;}
+.cart-btn:hover{background:var(--b50);border-color:var(--b100);}
+.cart-count{position:absolute;top:-5px;right:-5px;background:var(--b600);color:#fff;font-size:10px;font-weight:800;font-family:var(--fh);width:18px;height:18px;border-radius:50%;display:none;align-items:center;justify-content:center;}
+.cart-count.show{display:flex;}
+.acct-btn{display:flex;align-items:center;gap:7px;background:var(--g50);border:1px solid var(--g100);padding:7px 14px;border-radius:50px;font-size:13px;font-weight:600;color:var(--g600);cursor:pointer;transition:all .15s;}
+.acct-btn:hover{background:var(--b50);border-color:var(--b100);color:var(--b700);}
+.acct-avatar{width:24px;height:24px;border-radius:50%;background:var(--b600);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;}
+.hamburger{display:none;flex-direction:column;gap:5px;padding:8px;cursor:pointer;}
+.hamburger span{display:block;width:22px;height:2px;background:var(--g600);border-radius:2px;}
+.mobile-nav{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:1000;flex-direction:column;padding:80px 28px 32px;gap:4px;overflow-y:auto;}
+.mobile-nav.open{display:flex;}
+.mobile-nav-close{position:absolute;top:20px;right:20px;font-size:24px;cursor:pointer;color:var(--g600);}
+.mobile-nav a{padding:14px 16px;font-size:17px;font-weight:600;color:var(--g600);border-radius:var(--rsm);}
+/* HERO */
+#hero{background:linear-gradient(150deg,#EBF6FF 0%,#F5FBFF 50%,#E5F3FD 100%);padding:80px 0 60px;position:relative;overflow:hidden;}
+.hero-blobs{position:absolute;inset:0;pointer-events:none;}
+.hero-blobs span{position:absolute;border-radius:50%;opacity:.35;}
+.hero-blobs .b1{width:500px;height:500px;background:radial-gradient(circle,rgba(58,159,232,.22),transparent 70%);top:-120px;right:-60px;}
+.hero-blobs .b2{width:300px;height:300px;background:radial-gradient(circle,rgba(23,195,163,.18),transparent 70%);bottom:-60px;left:-40px;}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center;position:relative;}
+.hero-live-badge{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--b100);border-radius:50px;padding:7px 16px 7px 10px;font-size:13px;font-weight:600;color:var(--b800);margin-bottom:22px;box-shadow:var(--sh);}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--t400);animation:pdot 2s infinite;}
+@keyframes pdot{0%,100%{box-shadow:0 0 0 0 rgba(23,195,163,.5);}50%{box-shadow:0 0 0 6px rgba(23,195,163,0);}}
+.hero-title{font-family:var(--fh);font-size:clamp(34px,5vw,62px);font-weight:800;line-height:1.08;margin-bottom:20px;}
+.hero-title .acc{color:var(--b600);}
+.hero-desc{font-size:17px;color:var(--g600);line-height:1.75;margin-bottom:32px;max-width:440px;}
+.hero-ctas{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:36px;}
+.hero-trust{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--g400);}
+.trust-avatars{display:flex;}
+.trust-avatars span{width:30px;height:30px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;margin-left:-7px;}
+.trust-avatars span:first-child{margin-left:0;}
+.hero-product-stack{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:380px;width:100%;}
+.hero-pcard{background:#fff;border-radius:var(--rlg);padding:20px 16px 18px;text-align:center;box-shadow:var(--shm);border:1px solid var(--g100);cursor:pointer;transition:transform .25s,box-shadow .25s;}
+.hero-pcard:hover{transform:translateY(-5px);box-shadow:0 16px 48px rgba(21,113,185,.2);}
+.hero-pcard.featured{grid-column:1/-1;background:linear-gradient(135deg,var(--b50),#fff);border-color:var(--b200);}
+.hero-pcard-icon{font-size:40px;margin-bottom:10px;}
+.hero-pcard.featured .hero-pcard-icon{font-size:52px;}
+.hero-pcard-name{font-family:var(--fh);font-size:14px;font-weight:700;color:var(--g800);margin-bottom:4px;}
+.hero-pcard.featured .hero-pcard-name{font-size:18px;}
+.hero-pcard-price{font-size:12px;color:var(--b600);font-weight:600;}
+.hero-pcard-badge{display:inline-block;background:var(--b600);color:#fff;font-size:10px;font-weight:700;padding:2px 9px;border-radius:50px;margin-top:6px;}
+/* PROMO */
+.promo-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:32px 0;}
+.promo-card{background:var(--g50);border:1px solid var(--g100);border-radius:var(--rmd);padding:18px 20px;display:flex;align-items:center;gap:14px;}
+.promo-icon{font-size:28px;flex-shrink:0;}
+.promo-title{font-family:var(--fh);font-size:14px;font-weight:700;color:var(--g800);margin-bottom:3px;}
+.promo-sub{font-size:12px;color:var(--g400);}
+/* SHOP */
+#shop{padding:80px 0 60px;background:#fff;}
+.shop-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:16px;}
+.cat-tabs{display:flex;gap:8px;flex-wrap:wrap;}
+.cat-tab{background:var(--g50);border:1px solid var(--g200);color:var(--g600);font-family:var(--fh);font-size:13px;font-weight:600;padding:8px 18px;border-radius:50px;cursor:pointer;transition:all .15s;}
+.cat-tab.active{background:var(--b600);border-color:var(--b600);color:#fff;}
+.pub-products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:22px;}
+.pub-product-card{background:#fff;border:1px solid var(--g100);border-radius:var(--rlg);overflow:hidden;transition:transform .25s,box-shadow .25s;display:flex;flex-direction:column;}
+.pub-product-card:hover{transform:translateY(-6px);box-shadow:var(--shm);}
+.pc-img-pub{height:160px;display:flex;align-items:center;justify-content:center;font-size:64px;position:relative;background:linear-gradient(135deg,#EBF5FF,#C3DFF8);}
+.pc-tag{position:absolute;top:12px;left:12px;background:var(--b600);color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:50px;font-family:var(--fh);}
+.pc-body-pub{padding:18px 20px 20px;flex:1;display:flex;flex-direction:column;}
+.pc-name-pub{font-family:var(--fh);font-size:17px;font-weight:700;color:var(--g800);margin-bottom:6px;}
+.pc-cat{font-size:11px;font-weight:700;color:var(--b600);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.pc-desc-pub{font-size:13px;color:var(--g600);line-height:1.6;margin-bottom:16px;flex:1;}
+.pc-footer{display:flex;align-items:center;justify-content:space-between;}
+.pc-price-pub{font-family:var(--fh);font-size:22px;font-weight:700;color:var(--b700);}
+.add-cart-btn{background:var(--b600);color:#fff;font-family:var(--fh);font-weight:700;font-size:13px;padding:10px 18px;border-radius:50px;border:none;cursor:pointer;transition:all .2s;}
+.add-cart-btn:hover{background:var(--b800);transform:scale(1.05);}
+/* CART DRAWER */
+.cart-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:850;}
+.cart-overlay.open{display:block;}
+.cart-drawer{position:fixed;top:0;right:0;bottom:0;width:min(400px,100vw);background:#fff;z-index:860;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .35s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 40px rgba(0,0,0,.12);}
+.cart-drawer.open{transform:translateX(0);}
+.cart-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--g100);}
+.cart-head-title{font-family:var(--fh);font-size:20px;font-weight:700;}
+.cart-close{font-size:22px;cursor:pointer;color:var(--g400);}
+.cart-items{flex:1;overflow-y:auto;padding:20px 24px;}
+.cart-empty{text-align:center;padding:60px 0;color:var(--g400);}
+.cart-item{display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--g100);}
+.ci-img{width:56px;height:56px;border-radius:var(--rsm);background:linear-gradient(135deg,#EBF5FF,#C3DFF8);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;}
+.ci-info{flex:1;}
+.ci-name{font-family:var(--fh);font-size:14px;font-weight:700;margin-bottom:3px;}
+.ci-row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+.ci-price{font-family:var(--fh);font-size:15px;font-weight:700;color:var(--b700);}
+.ci-qty-ctrl{display:flex;align-items:center;border:1px solid var(--g200);border-radius:6px;overflow:hidden;}
+.ci-qty-ctrl button{width:28px;height:28px;font-size:15px;color:var(--b600);}
+.ci-qty-ctrl span{width:32px;text-align:center;font-weight:700;font-size:13px;border-left:1px solid var(--g200);border-right:1px solid var(--g200);line-height:28px;}
+.ci-remove{font-size:16px;color:var(--g400);cursor:pointer;margin-left:6px;}
+.ci-remove:hover{color:#e53e3e;}
+.cart-foot{padding:20px 24px;border-top:1px solid var(--g100);}
+.cart-subtotal{display:flex;justify-content:space-between;font-size:14px;color:var(--g600);margin-bottom:6px;}
+.cart-total{display:flex;justify-content:space-between;font-family:var(--fh);font-size:18px;font-weight:700;margin-bottom:16px;}
+.cart-checkout-btn{display:block;width:100%;background:var(--b600);color:#fff;font-family:var(--fh);font-weight:700;font-size:16px;padding:15px;border-radius:50px;text-align:center;border:none;cursor:pointer;box-shadow:0 4px 18px rgba(21,113,185,.28);}
+.cart-continue{display:block;text-align:center;margin-top:10px;font-size:13px;color:var(--g400);cursor:pointer;}
+/* CHECKOUT */
+.checkout-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:870;align-items:center;justify-content:center;}
+.checkout-overlay.open{display:flex;}
+.checkout-modal{background:#fff;border-radius:var(--rxl);width:min(640px,96vw);max-height:92vh;overflow-y:auto;}
+.checkout-head{padding:28px 32px 0;display:flex;justify-content:space-between;align-items:center;}
+.checkout-title{font-family:var(--fh);font-size:24px;font-weight:700;}
+.checkout-body{padding:24px 32px 32px;}
+.checkout-steps{display:flex;align-items:center;gap:0;margin-bottom:28px;}
+.cs-step{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--g400);}
+.cs-step.active{color:var(--b600);}
+.cs-step.done{color:var(--t400);}
+.cs-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--g100);color:var(--g400);flex-shrink:0;}
+.cs-step.active .cs-num{background:var(--b600);color:#fff;}
+.cs-step.done .cs-num{background:var(--t400);color:#fff;}
+.cs-line{flex:1;height:2px;background:var(--g100);margin:0 8px;}
+.cs-line.done{background:var(--t400);}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}
+.form-grid.full{grid-template-columns:1fr;}
+.fg{display:flex;flex-direction:column;gap:6px;}
+.fg label{font-size:12px;font-weight:700;color:var(--g600);letter-spacing:.05em;text-transform:uppercase;}
+.fg input,.fg select,.fg textarea{padding:11px 14px;border:1.5px solid var(--g200);border-radius:var(--rsm);font-family:var(--fb);font-size:14px;color:var(--g800);background:#fff;outline:none;transition:border-color .2s,box-shadow .2s;width:100%;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--b400);box-shadow:0 0 0 3px rgba(58,159,232,.1);}
+.fg textarea{resize:vertical;min-height:80px;}
+.pay-options{display:flex;gap:10px;flex-wrap:wrap;}
+.pay-opt{display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px solid var(--g200);border-radius:var(--rsm);cursor:pointer;font-size:13px;font-weight:600;}
+.pay-opt:hover{border-color:var(--b200);background:var(--b50);}
+.pay-opt input{accent-color:var(--b600);}
+.order-review-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--g100);font-size:14px;}
+.ori-name{font-weight:600;}
+.ori-detail{font-size:12px;color:var(--g400);margin-top:2px;}
+.ori-price{font-family:var(--fh);font-weight:700;color:var(--b700);}
+.review-total-row{display:flex;justify-content:space-between;font-family:var(--fh);font-size:20px;font-weight:700;margin-top:16px;padding-top:16px;border-top:2px solid var(--g100);}
+.checkout-nav{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:20px;border-top:1px solid var(--g100);}
+.back-btn{background:none;border:1.5px solid var(--g200);color:var(--g500);font-family:var(--fh);font-weight:600;font-size:14px;padding:11px 22px;border-radius:50px;cursor:pointer;}
+.next-btn{background:var(--b600);color:#fff;font-family:var(--fh);font-weight:700;font-size:15px;padding:13px 32px;border-radius:50px;border:none;cursor:pointer;}
+.checkout-success{text-align:center;padding:20px 0 10px;}
+.cs-icon{font-size:64px;margin-bottom:16px;}
+.cs-title{font-family:var(--fh);font-size:26px;font-weight:700;color:var(--b800);margin-bottom:8px;}
+.cs-msg{font-size:15px;color:var(--g600);margin-bottom:20px;}
+.cs-order-id{display:inline-block;background:var(--b50);color:var(--b800);font-family:var(--fh);font-weight:700;font-size:16px;padding:10px 24px;border-radius:var(--rsm);border:1px solid var(--b100);margin-bottom:20px;}
+/* ACCOUNT MODAL */
+.acct-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:880;align-items:center;justify-content:center;}
+.acct-overlay.open{display:flex;}
+.acct-modal{background:#fff;border-radius:var(--rxl);width:min(480px,95vw);max-height:90vh;overflow-y:auto;padding:36px;}
+.acct-tabs{display:flex;gap:0;border-bottom:2px solid var(--g100);margin-bottom:24px;}
+.acct-tab{flex:1;text-align:center;padding:12px;font-family:var(--fh);font-size:14px;font-weight:700;color:var(--g400);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
+.acct-tab.active{color:var(--b600);border-bottom-color:var(--b600);}
+.acct-form{display:none;}
+.acct-form.active{display:block;}
+.auth-field{margin-bottom:14px;}
+.auth-label{font-size:12px;font-weight:700;color:var(--g600);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;}
+.auth-input{width:100%;padding:12px 14px;border:1.5px solid var(--g200);border-radius:var(--rsm);font-family:var(--fb);font-size:14px;color:var(--g800);outline:none;transition:border-color .2s;}
+.auth-input:focus{border-color:var(--b400);}
+.auth-btn{width:100%;padding:13px;background:var(--b600);color:#fff;font-family:var(--fh);font-weight:700;font-size:15px;border-radius:50px;border:none;cursor:pointer;margin-top:4px;}
+.auth-btn:hover{background:var(--b800);}
+.auth-err{font-size:13px;color:#e53e3e;margin-top:8px;display:none;}
+.auth-ok{font-size:13px;color:var(--t600);margin-top:8px;display:none;}
+.profile-head{display:flex;align-items:center;gap:16px;margin-bottom:24px;}
+.profile-avatar{width:56px;height:56px;border-radius:50%;background:var(--b600);color:#fff;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--fh);}
+.profile-name{font-family:var(--fh);font-size:20px;font-weight:700;}
+.profile-email{font-size:13px;color:var(--g400);}
+.profile-orders{border:1px solid var(--g100);border-radius:var(--rmd);overflow:hidden;}
+.po-head{background:var(--g50);padding:12px 16px;font-size:11px;font-weight:700;color:var(--g500);text-transform:uppercase;letter-spacing:.08em;}
+.po-item{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid var(--g100);font-size:13px;flex-wrap:wrap;gap:6px;}
+.po-id{font-family:var(--fh);color:var(--b600);font-weight:600;}
+.po-status{font-size:11px;font-weight:700;padding:3px 9px;border-radius:50px;}
+.po-status.pending{background:#FFF8E1;color:#E65100;}
+.po-status.delivered{background:#E8F5E9;color:#2E7D32;}
+.loyalty-bar{background:var(--b50);border:1px solid var(--b100);border-radius:var(--rmd);padding:16px;margin-top:16px;}
+.lb-title{font-family:var(--fh);font-size:13px;font-weight:700;color:var(--b800);margin-bottom:8px;}
+.lb-bar{height:8px;background:var(--b100);border-radius:4px;overflow:hidden;margin-bottom:6px;}
+.lb-fill{height:100%;background:var(--b600);border-radius:4px;}
+.lb-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--g400);}
+/* TRACKING */
+#tracking{padding:80px 0;background:var(--g50);}
+.track-search{display:flex;gap:10px;margin-bottom:28px;}
+.track-input{flex:1;padding:14px 18px;border:1.5px solid var(--g200);border-radius:50px;font-family:var(--fb);font-size:15px;color:var(--g800);outline:none;}
+.track-input:focus{border-color:var(--b400);}
+.track-result{display:none;}
+.track-result.show{display:block;}
+.track-card{background:#fff;border:1px solid var(--g100);border-radius:var(--rlg);overflow:hidden;box-shadow:var(--sh);}
+.track-hdr{background:var(--b800);padding:22px 26px;display:flex;justify-content:space-between;align-items:center;}
+.track-id{font-size:12px;color:rgba(255,255,255,.5);font-family:var(--fh);margin-bottom:4px;}
+.track-name{font-family:var(--fh);font-size:18px;font-weight:700;color:#fff;}
+.track-status-badge{background:var(--t400);color:#fff;font-size:11px;font-weight:700;padding:5px 14px;border-radius:50px;font-family:var(--fh);}
+.track-body{padding:26px;}
+.timeline{display:flex;flex-direction:column;}
+.te{display:flex;gap:14px;padding-bottom:22px;position:relative;}
+.te:last-child{padding-bottom:0;}
+.te::before{content:'';position:absolute;left:14px;top:30px;bottom:0;width:2px;background:var(--g100);}
+.te:last-child::before{display:none;}
+.te-dot{flex-shrink:0;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;z-index:1;position:relative;}
+.te-dot.done{background:var(--b600);color:#fff;}
+.te-dot.active{background:var(--t400);color:#fff;}
+.te-dot.pending{background:var(--g100);border:2px solid var(--g200);}
+.te-name{font-family:var(--fh);font-size:14px;font-weight:700;color:var(--g800);margin-bottom:2px;}
+.te-time{font-size:12px;color:var(--g400);}
+/* FEATURES */
+#features{padding:80px 0;background:#fff;}
+.features-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;}
+.feat-card{background:var(--g50);border:1px solid var(--g100);border-radius:var(--rlg);padding:28px 22px;text-align:center;transition:transform .2s,box-shadow .2s;}
+.feat-card:hover{transform:translateY(-4px);box-shadow:var(--sh);}
+.feat-card-icon{font-size:40px;margin-bottom:14px;}
+.feat-card-title{font-family:var(--fh);font-size:16px;font-weight:700;margin-bottom:8px;}
+.feat-card-desc{font-size:13px;color:var(--g600);line-height:1.65;}
+/* REVIEWS */
+#reviews{padding:80px 0;background:var(--g50);}
+.reviews-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+.review-card{background:#fff;border:1px solid var(--g100);border-radius:var(--rlg);padding:24px;transition:transform .2s;}
+.review-card:hover{transform:translateY(-3px);}
+.review-stars{color:var(--a400);font-size:16px;margin-bottom:12px;}
+.review-text{font-size:14px;color:var(--g600);line-height:1.7;margin-bottom:16px;}
+.review-author{display:flex;align-items:center;gap:10px;}
+.review-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0;}
+.review-name{font-weight:700;font-size:14px;}
+.review-loc{font-size:12px;color:var(--g400);}
+/* FAQ */
+#faq{padding:80px 0;background:#fff;}
+.faq-wrap{max-width:700px;margin:0 auto;}
+.faq-list{border:1px solid var(--g100);border-radius:var(--rlg);overflow:hidden;}
+.faq-item{border-bottom:1px solid var(--g100);}
+.faq-item:last-child{border-bottom:none;}
+.faq-q{width:100%;display:flex;justify-content:space-between;align-items:center;padding:20px 22px;font-family:var(--fh);font-size:15px;font-weight:700;color:var(--g800);cursor:pointer;background:#fff;text-align:left;gap:14px;}
+.faq-q:hover{background:var(--g50);}
+.faq-q.open{color:var(--b700);background:var(--b50);}
+.faq-icon{flex-shrink:0;width:22px;height:22px;background:var(--g100);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--g500);}
+.faq-q.open .faq-icon{background:var(--b600);color:#fff;transform:rotate(45deg);}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .32s ease,padding .32s;padding:0 22px;font-size:14px;color:var(--g600);line-height:1.75;}
+.faq-a.open{max-height:300px;padding:4px 22px 20px;}
+/* ABOUT */
+#about{padding:80px 0;background:var(--b800);color:#fff;}
+.about-grid{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;}
+.about-title{font-family:var(--fh);font-size:clamp(28px,3.5vw,40px);font-weight:800;line-height:1.15;margin-bottom:16px;}
+.about-desc{font-size:16px;color:rgba(255,255,255,.7);line-height:1.75;margin-bottom:28px;}
+.about-feats{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.about-feat{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:var(--rmd);padding:16px;display:flex;gap:12px;}
+.af-icon{font-size:20px;flex-shrink:0;}
+.af-title{font-family:var(--fh);font-size:13px;font-weight:700;margin-bottom:3px;}
+.af-desc{font-size:11px;color:rgba(255,255,255,.5);line-height:1.5;}
+/* FOOTER */
+#footer{background:var(--g800);color:#fff;padding:60px 0 28px;}
+.footer-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px;}
+.footer-logo{font-family:var(--fh);font-size:20px;font-weight:800;color:#fff;display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.footer-about{font-size:13px;color:rgba(255,255,255,.45);line-height:1.7;}
+.footer-col-title{font-family:var(--fh);font-size:11px;font-weight:700;color:rgba(255,255,255,.4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:16px;}
+.footer-links{list-style:none;display:flex;flex-direction:column;gap:9px;}
+.footer-links a{font-size:13px;color:rgba(255,255,255,.55);}
+.footer-links a:hover{color:#fff;}
+.footer-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:24px;border-top:1px solid rgba(255,255,255,.08);font-size:12px;color:rgba(255,255,255,.3);}
+/* PUBLIC TOAST */
+#pubToast{position:fixed;bottom:24px;right:24px;background:var(--g800);color:#fff;padding:13px 18px;border-radius:var(--rmd);font-size:13px;font-weight:600;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);max-width:300px;pointer-events:none;}
+#pubToast.show{transform:translateY(0);opacity:1;}
+#pubToast.success{background:var(--t600);}
+#pubToast.info{background:var(--b600);}
+/* RESPONSIVE PUBLIC */
+@media(max-width:920px){
+  .nav-menu,.nav-right .btn-primary{display:none!important;}
+  .hamburger{display:flex;}
+  .hero-grid{grid-template-columns:1fr;gap:32px;text-align:center;}
+  .hero-desc,.hero-trust,.hero-ctas{margin-left:auto;margin-right:auto;justify-content:center;}
+  .promo-row{grid-template-columns:1fr;}
+  .features-grid{grid-template-columns:repeat(2,1fr);}
+  .reviews-grid{grid-template-columns:1fr 1fr;}
+  .about-grid{grid-template-columns:1fr;gap:32px;}
+  .footer-grid{grid-template-columns:1fr 1fr;gap:28px;}
+}
+@media(max-width:600px){
+  .pub-products-grid{grid-template-columns:1fr 1fr;}
+  .features-grid{grid-template-columns:1fr 1fr;}
+  .reviews-grid{grid-template-columns:1fr;}
+  .footer-grid{grid-template-columns:1fr;}
+}
+
+/* ══════════════════════════════════════════════
+   ADMIN CSS (scoped to #adminView)
+══════════════════════════════════════════════ */
+#adminView{background:var(--bg);color:var(--adm-text);font-family:var(--font-b);}
+/* SIDEBAR */
+#sidebar{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.sb-logo{padding:24px 20px 20px;font-family:var(--font-h);font-size:26px;letter-spacing:.04em;color:var(--blue);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.sb-logo span{font-size:11px;font-family:var(--font-b);font-weight:500;color:var(--muted);display:block;letter-spacing:0;}
+.sb-section{padding:16px 12px 6px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.sb-item{display:flex;align-items:center;gap:10px;padding:10px 14px;margin:1px 8px;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);transition:all .15s;position:relative;}
+.sb-item:hover{background:var(--bg3);color:var(--adm-text);}
+.sb-item.active{background:var(--blue-dim);color:var(--blue);}
+.sb-item .sb-icon{font-size:16px;width:20px;text-align:center;}
+.sb-badge{margin-left:auto;background:var(--red);color:white;font-size:10px;font-weight:700;font-family:var(--font-m);padding:2px 7px;border-radius:50px;}
+.sb-divider{height:1px;background:var(--border);margin:10px 16px;}
+.sb-user{padding:16px 14px;margin-top:auto;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.sb-avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;}
+.sb-user-name{font-size:13px;font-weight:600;color:var(--adm-text);}
+.sb-user-role{font-size:11px;color:var(--muted);}
+.sb-logout{margin-left:auto;font-size:11px;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:6px;}
+.sb-logout:hover{background:var(--red-dim);color:var(--red);}
+/* ADMIN MAIN */
+#adm-main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#adm-topbar{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:60px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;}
+.topbar-title{font-family:var(--font-h);font-size:22px;letter-spacing:.04em;color:var(--adm-text);}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+.topbar-time{font-family:var(--font-m);font-size:12px;color:var(--muted);}
+.adm-live-dot{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);}
+.adm-live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--teal);animation:admpulse 2s infinite;}
+@keyframes admpulse{0%,100%{box-shadow:0 0 0 0 rgba(63,185,80,.5);}50%{box-shadow:0 0 0 5px rgba(63,185,80,0);}}
+#adm-content{flex:1;overflow-y:auto;padding:24px 28px;}
+/* PANELS */
+.adm-panel{display:none;}
+.adm-panel.active{display:block;}
+/* STAT CARDS */
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:20px;position:relative;overflow:hidden;}
+.stat-card::before{content:'';position:absolute;top:0;right:0;width:80px;height:80px;border-radius:50%;background:var(--accent,rgba(47,129,247,.08));transform:translate(25%,-25%);}
+.stat-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;}
+.stat-num{font-family:var(--font-h);font-size:38px;letter-spacing:.02em;line-height:1;margin-bottom:6px;}
+.stat-sub{font-size:12px;color:var(--muted);}
+/* TABLES */
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.section-title{font-family:var(--font-h);font-size:22px;letter-spacing:.03em;color:var(--adm-text);}
+.section-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.filter-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--muted);font-family:var(--font-b);font-size:12px;font-weight:600;padding:7px 14px;border-radius:50px;cursor:pointer;transition:all .15s;}
+.filter-btn:hover,.filter-btn.active{background:var(--blue-dim);border-color:var(--blue);color:var(--blue);}
+.search-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:8px 14px;color:var(--adm-text);font-family:var(--font-b);font-size:13px;width:200px;outline:none;}
+.search-box:focus{border-color:var(--blue);}
+.orders-table{width:100%;border-collapse:collapse;}
+.orders-table th{text-align:left;padding:10px 14px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);}
+.orders-table td{padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle;}
+.orders-table tr:hover td{background:rgba(255,255,255,.02);}
+.orders-table tr:last-child td{border-bottom:none;}
+.order-id{font-family:var(--font-m);font-size:12px;color:var(--blue);}
+.cust-name{font-weight:600;color:var(--adm-text);}
+.cust-contact{font-size:12px;color:var(--muted);}
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:24px;}
+.table-wrap.padded{padding:28px;}
+.table-scroll{overflow-x:auto;}
+.status-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:50px;font-family:var(--font-b);letter-spacing:.02em;white-space:nowrap;}
+.status-badge::before{content:'';width:6px;height:6px;border-radius:50%;}
+.s-pending{background:var(--amber-dim);color:var(--amber);}  .s-pending::before{background:var(--amber);}
+.s-processing{background:var(--blue-dim);color:var(--blue);}  .s-processing::before{background:var(--blue);}
+.s-shipped{background:var(--purple-dim);color:var(--purple);} .s-shipped::before{background:var(--purple);}
+.s-delivered{background:var(--teal-dim);color:var(--teal);}  .s-delivered::before{background:var(--teal);}
+.s-cancelled{background:var(--red-dim);color:var(--red);}    .s-cancelled::before{background:var(--red);}
+.pay-badge{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:3px 9px;border-radius:50px;}
+.pay-paid{background:var(--teal-dim);color:var(--teal);}
+.pay-unpaid{background:var(--red-dim);color:var(--red);}
+.act-btn{background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:var(--font-b);}
+.act-btn:hover{border-color:var(--border2);color:var(--adm-text);}
+.act-btn.blue{background:var(--blue-dim);border-color:var(--blue);color:var(--blue);}
+.act-btn.blue:hover{background:var(--blue);color:white;}
+.act-btn.red{background:var(--red-dim);border-color:var(--red);color:var(--red);}
+.act-btn.red:hover{background:var(--red);color:white;}
+.act-btn.teal{background:var(--teal-dim);border-color:var(--teal);color:var(--teal);}
+.act-btn.teal:hover{background:var(--teal);color:white;}
+.tbl-select{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:5px 8px;color:var(--adm-text);font-family:var(--font-b);font-size:12px;outline:none;cursor:pointer;}
+/* ADMIN MODAL */
+.adm-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:8000;align-items:center;justify-content:center;}
+.adm-modal-overlay.open{display:flex;}
+.adm-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:36px;width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6);}
+.adm-modal-wide{width:680px;}
+.modal-title{font-family:var(--font-h);font-size:26px;letter-spacing:.03em;margin-bottom:4px;color:var(--adm-text);}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:24px;}
+.modal-close{float:right;font-size:22px;cursor:pointer;color:var(--muted);}
+.modal-close:hover{color:var(--adm-text);}
+.modal-field{margin-bottom:16px;}
+.modal-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:7px;}
+.modal-input,.modal-select,.modal-textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:11px 14px;color:var(--adm-text);font-family:var(--font-b);font-size:13px;outline:none;transition:border-color .2s;}
+.modal-input:focus,.modal-select:focus,.modal-textarea:focus{border-color:var(--blue);}
+.modal-textarea{resize:vertical;min-height:80px;}
+.modal-actions{display:flex;gap:10px;margin-top:24px;}
+.modal-btn{flex:1;padding:12px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--font-b);font-weight:700;font-size:14px;}
+.modal-btn.primary{background:var(--blue);color:white;}
+.modal-btn.danger{background:var(--red);color:white;}
+.modal-btn.secondary{background:var(--bg3);color:var(--muted);border:1px solid var(--border2);}
+.modal-btn:hover{opacity:.85;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+/* ADMIN PRODUCTS */
+.adm-products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px;}
+.adm-product-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;transition:border-color .2s,transform .15s;}
+.adm-product-card:hover{border-color:var(--border2);transform:translateY(-2px);}
+.adm-pc-img{width:100%;height:140px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:48px;}
+.adm-pc-body{padding:16px;}
+.adm-pc-name{font-weight:700;font-size:15px;margin-bottom:4px;color:var(--adm-text);}
+.adm-pc-price{font-family:var(--font-m);color:var(--amber);font-size:14px;margin-bottom:6px;}
+.adm-pc-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px;}
+.adm-pc-actions{display:flex;gap:8px;}
+/* CUSTOMERS */
+.adm-customers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+.cust-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:20px;cursor:pointer;transition:border-color .2s,transform .15s;}
+.cust-card:hover{border-color:var(--border2);transform:translateY(-2px);}
+.cust-card.loyal{border-color:var(--amber);background:rgba(240,180,41,.04);}
+.cust-head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.cust-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex-shrink:0;color:#fff;}
+.cust-info-name{font-weight:700;font-size:15px;color:var(--adm-text);}
+.cust-info-phone{font-size:12px;color:var(--muted);}
+.cust-info-since{font-size:11px;color:var(--muted);margin-top:1px;}
+.cust-stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--border);padding-top:14px;}
+.cs-item{text-align:center;padding:0 8px;}
+.cs-item:not(:last-child){border-right:1px solid var(--border);}
+.cs-val{font-family:var(--font-h);font-size:22px;letter-spacing:.02em;margin-bottom:2px;}
+.cs-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;}
+.tier-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:50px;}
+.tier-bronze{background:rgba(205,127,50,.15);color:#cd7f32;}
+.tier-silver{background:rgba(192,192,192,.12);color:#c0c0c0;}
+.tier-gold{background:rgba(240,180,41,.15);color:var(--amber);}
+.loyal-tag{display:inline-flex;align-items:center;gap:4px;background:var(--amber-dim);color:var(--amber);font-size:10px;font-weight:700;padding:3px 8px;border-radius:50px;}
+.customers-layout{display:grid;gap:18px;}
+.customers-toolbar-note{font-size:12px;color:var(--muted);}
+.customer-table{width:100%;border-collapse:collapse;min-width:860px;}
+.customer-table th,.customer-table td{padding:14px 16px;border-bottom:1px solid var(--border);font-size:13px;text-align:left;vertical-align:top;}
+.customer-table th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;background:rgba(255,255,255,.01);}
+.customer-table tr:hover td{background:rgba(255,255,255,.015);}
+.customer-name-cell{display:flex;align-items:center;gap:10px;}
+.customer-table-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.inline-tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;}
+.inline-tag.yes{background:var(--teal-dim);color:var(--teal);}
+.inline-tag.no{background:var(--bg3);color:var(--muted);border:1px solid var(--border);}
+.mini-btn{padding:8px 12px;border-radius:999px;border:1px solid var(--border2);background:var(--bg3);color:var(--adm-text);font-size:12px;font-weight:700;cursor:pointer;}
+.mini-btn.primary{background:var(--blue-dim);border-color:var(--blue);color:var(--blue);}
+.mini-btn.danger{background:var(--red-dim);border-color:var(--red);color:var(--red);}
+.mini-btn:hover{opacity:.9;}
+.modal-check{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--adm-text);}
+.modal-check input{width:16px;height:16px;accent-color:var(--teal);}
+.editor-help{font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:16px;}
+.editor-textarea{min-height:320px;font-family:var(--font-m);}
+.editor-actions{display:flex;gap:10px;flex-wrap:wrap;}
+/* REWARDS */
+.rewards-header{background:linear-gradient(135deg,var(--amber-dim),rgba(240,180,41,.04));border:1px solid rgba(240,180,41,.2);border-radius:var(--r2);padding:24px;margin-bottom:24px;display:flex;align-items:center;gap:20px;}
+.rewards-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;}
+.reward-stat{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:16px;text-align:center;}
+.reward-stat .num{font-family:var(--font-h);font-size:32px;letter-spacing:.02em;}
+.reward-stat .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600;}
+/* BRANDING PANEL */
+.branding-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;}
+.brand-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:24px;}
+.brand-card-title{font-family:var(--font-h);font-size:18px;letter-spacing:.03em;margin-bottom:16px;color:var(--blue);}
+.logo-preview-box{width:100%;height:120px;background:var(--bg3);border:2px dashed var(--border2);border-radius:var(--r);display:flex;align-items:center;justify-content:center;margin-bottom:14px;cursor:pointer;overflow:hidden;}
+.logo-preview-box:hover{border-color:var(--blue);}
+.upload-hint{font-size:13px;color:var(--muted);text-align:center;}
+/* ORDER DETAIL */
+.od-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.od-row:last-child{border-bottom:none;}
+.od-label{color:var(--muted);}
+.od-val{font-weight:600;color:var(--adm-text);}
+.progress-bar{height:4px;background:var(--bg3);border-radius:2px;margin:16px 0;overflow:hidden;}
+.progress-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .5s ease;}
+.progress-steps{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;}
+.progress-steps span.done{color:var(--blue);}
+.progress-steps span.active{color:var(--teal);}
+/* ADMIN TOAST */
+#adminToast{position:fixed;bottom:24px;right:24px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:14px 18px;font-size:13px;font-weight:500;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);box-shadow:0 8px 32px rgba(0,0,0,.4);max-width:320px;color:var(--adm-text);}
+#adminToast.show{transform:translateY(0);opacity:1;}
+#adminToast.saved{animation:toastPulse .55s ease;}
+#adminToast.success{border-color:var(--teal);color:var(--teal);}
+#adminToast.warn{border-color:var(--amber);color:var(--amber);}
+#adminToast.err{border-color:var(--red);color:var(--red);}
+@keyframes toastPulse{
+  0%{transform:translateY(18px) scale(.96);opacity:0;}
+  60%{transform:translateY(0) scale(1.03);opacity:1;}
+  100%{transform:translateY(0) scale(1);opacity:1;}
+}
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-icon{font-size:48px;margin-bottom:12px;}
+.empty-text{font-size:15px;font-weight:500;}
+/* SHEET CONFIG BANNER */
+.sheet-banner{background:var(--amber-dim);border:1px solid rgba(240,180,41,.3);border-radius:var(--r);padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--amber);display:flex;align-items:center;gap:10px;}
+.sheet-banner a{color:var(--amber);text-decoration:underline;cursor:pointer;}
+@media(max-width:900px){
+  #sidebar{width:60px;}
+  .sb-item span,.sb-logo>div,.sb-user-name,.sb-user-role,.sb-section,.sb-logout{display:none;}
+  .sb-logo{padding:20px 0;justify-content:center;}
+  .sb-item{justify-content:center;padding:12px;margin:2px 4px;}
+  .stat-row{grid-template-columns:repeat(2,1fr);}
+  .branding-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<!-- ╔══════════════════╗ -->
+<!-- ║  PUBLIC VIEW     ║ -->
+<!-- ╚══════════════════╝ -->
+<div id="publicView">
+
+<div id="topbar-announce">
+  <strong>🚚 Fast Delivery:</strong> Order now & receive in 2–3 hours! &nbsp;·&nbsp; Free delivery on orders ₱200+
+  <span class="announce-close" onclick="this.parentElement.style.display='none'">×</span>
+</div>
+
+<nav id="navbar">
+  <div class="container">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <div class="drop"><svg viewBox="0 0 24 24"><path d="M12 2C8 2 5 8 5 12c0 4.5 3.1 8 7 8s7-3.5 7-8c0-4-3-10-7-10z"/></svg></div>
+        <div id="navLogoName">WaterMed<span class="sub-name">Purified Water Station</span></div>
+      </a>
+      <ul class="nav-menu">
+        <li><a href="#shop">Shop</a></li>
+        <li><a href="#tracking">Track Order</a></li>
+        <li><a href="#features">Why Us</a></li>
+        <li><a href="#reviews">Reviews</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#about">About</a></li>
+      </ul>
+      <div class="nav-right">
+        <div class="cart-btn" onclick="openCart()">🛒<span class="cart-count" id="cartCount">0</span></div>
+        <div class="acct-btn" onclick="openAccount()">
+          <div class="acct-avatar" id="acctAvatar">👤</div>
+          <span id="acctLabel">Sign In</span>
+        </div>
+        <a href="#shop" class="btn-primary" style="font-size:13px;padding:10px 20px;">Order Now</a>
+      </div>
+      <div class="hamburger" onclick="toggleMobileNav()"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+</nav>
+
+<div class="mobile-nav" id="mobileNav">
+  <span class="mobile-nav-close" onclick="toggleMobileNav()">×</span>
+  <a href="#shop" onclick="toggleMobileNav()">Shop</a>
+  <a href="#tracking" onclick="toggleMobileNav()">Track Order</a>
+  <a href="#features" onclick="toggleMobileNav()">Why Us</a>
+  <a href="#reviews" onclick="toggleMobileNav()">Reviews</a>
+  <a href="#faq" onclick="toggleMobileNav()">FAQ</a>
+  <a href="#about" onclick="toggleMobileNav()">About</a>
+  <a onclick="openAccount();toggleMobileNav()">My Account</a>
+</div>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-blobs"><span class="b1"></span><span class="b2"></span></div>
+  <div class="container">
+    <div class="hero-grid">
+      <div>
+        <div class="hero-live-badge"><span class="live-dot"></span> Now delivering in your area</div>
+        <h1 class="hero-title">Pure Water,<br><span class="acc">Delivered Fast</span><br>to Your Door</h1>
+        <p class="hero-desc">Premium purified, mineral & alkaline water — ordered online, at your doorstep in 2–3 hours.</p>
+        <div class="hero-ctas">
+          <a href="#shop" class="btn-primary">Shop Now →</a>
+          <a href="#tracking" class="btn-outline">Track My Order</a>
+        </div>
+        <div class="hero-trust">
+          <div class="trust-avatars">
+            <span style="background:#3A9FE8">MR</span><span style="background:#17C3A3">JD</span>
+            <span style="background:#1571B9">PR</span><span style="background:#0A3D6B">+</span>
+          </div>
+          <span>Trusted by <strong id="heroHouseholds">2,400+</strong> households</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;">
+        <div class="hero-product-stack">
+          <div class="hero-pcard featured" onclick="document.getElementById('shop').scrollIntoView({behavior:'smooth'})">
+            <div class="hero-pcard-icon">💧</div>
+            <div class="hero-pcard-name">Mineral Water</div>
+            <div class="hero-pcard-price">from ₱35 / 5-gal</div>
+            <div class="hero-pcard-badge">Most Popular</div>
+          </div>
+          <div class="hero-pcard" onclick="document.getElementById('shop').scrollIntoView({behavior:'smooth'})">
+            <div class="hero-pcard-icon">⚡</div>
+            <div class="hero-pcard-name">Alkaline</div>
+            <div class="hero-pcard-price">₱45 / 5-gal</div>
+          </div>
+          <div class="hero-pcard" onclick="document.getElementById('shop').scrollIntoView({behavior:'smooth'})">
+            <div class="hero-pcard-icon">🍶</div>
+            <div class="hero-pcard-name">Purified</div>
+            <div class="hero-pcard-price">₱30 / 5-gal</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="promo-row">
+      <div class="promo-card"><div class="promo-icon">🚚</div><div><div class="promo-title">2–3 Hour Delivery</div><div class="promo-sub">Guaranteed same-day delivery</div></div></div>
+      <div class="promo-card"><div class="promo-icon">🧪</div><div><div class="promo-title">DOH Certified</div><div class="promo-sub">7-stage purification process</div></div></div>
+      <div class="promo-card"><div class="promo-icon">💳</div><div><div class="promo-title">Cash, GCash & Bank</div><div class="promo-sub">Flexible payment options</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- SHOP -->
+<section id="shop">
+  <div class="container">
+    <div class="shop-header">
+      <div>
+        <div class="section-chip">🛒 Our Products</div>
+        <div class="section-title-pub">Choose Your Water</div>
+      </div>
+      <div class="cat-tabs" id="catTabs"></div>
+    </div>
+    <div class="pub-products-grid" id="pubProductsGrid"></div>
+  </div>
+</section>
+
+<!-- TRACKING -->
+<section id="tracking">
+  <div class="container">
+    <div style="text-align:center;margin-bottom:40px;">
+      <div class="section-chip">📍 Order Tracking</div>
+      <div class="section-title-pub">Track Your Order</div>
+      <p class="section-sub" style="margin:0 auto;">Enter your order ID to see real-time delivery status.</p>
+    </div>
+    <div style="max-width:620px;margin:0 auto;">
+      <div class="track-search">
+        <input class="track-input" id="trackInput" type="text" placeholder="Enter Order ID (e.g. WM-2041)"/>
+        <button class="btn-primary" style="flex-shrink:0;" onclick="trackOrder()">Track →</button>
+      </div>
+      <div class="track-result" id="trackResult"></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div style="text-align:center;margin-bottom:48px;">
+      <div class="section-chip">✨ Why WaterMed</div>
+      <div class="section-title-pub">Quality You Can Taste</div>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card"><div class="feat-card-icon">🔬</div><div class="feat-card-title">7-Stage Filtration</div><div class="feat-card-desc">Advanced purification removes bacteria, heavy metals, and impurities.</div></div>
+      <div class="feat-card"><div class="feat-card-icon">🏅</div><div class="feat-card-title">DOH Certified</div><div class="feat-card-desc">Fully compliant with Department of Health water quality standards.</div></div>
+      <div class="feat-card"><div class="feat-card-icon">🚐</div><div class="feat-card-title">Fast Delivery</div><div class="feat-card-desc">Door-to-door delivery in 2–3 hours, 7 days a week.</div></div>
+      <div class="feat-card"><div class="feat-card-icon">♻️</div><div class="feat-card-title">Eco Containers</div><div class="feat-card-desc">BPA-free, returnable jugs. We collect empties on every visit.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- REVIEWS -->
+<section id="reviews">
+  <div class="container">
+    <div style="text-align:center;margin-bottom:40px;">
+      <div class="section-chip">⭐ Reviews</div>
+      <div class="section-title-pub">What Customers Say</div>
+    </div>
+    <div class="reviews-grid">
+      <div class="review-card"><div class="review-stars">★★★★★</div><div class="review-text">Best water delivery in QC! Always on time and the water tastes incredibly clean.</div><div class="review-author"><div class="review-avatar" style="background:#3A9FE8">MS</div><div><div class="review-name">Maria Santos</div><div class="review-loc">Quezon City</div></div></div></div>
+      <div class="review-card"><div class="review-stars">★★★★★</div><div class="review-text">I switched from bottled water to WaterMed 2 years ago and never looked back. The alkaline water is amazing for my health.</div><div class="review-author"><div class="review-avatar" style="background:#17C3A3">RM</div><div><div class="review-name">Rodel Mendoza</div><div class="review-loc">Marikina</div></div></div></div>
+      <div class="review-card"><div class="review-stars">★★★★★</div><div class="review-text">Super convenient! I order online, they arrive within 2 hours. GCash payment is seamless.</div><div class="review-author"><div class="review-avatar" style="background:#F5A623">AB</div><div><div class="review-name">Ana Bautista</div><div class="review-loc">San Juan</div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="container">
+    <div class="faq-wrap">
+      <div style="text-align:center;margin-bottom:40px;">
+        <div class="section-chip">❓ FAQ</div>
+        <div class="section-title-pub">Common Questions</div>
+      </div>
+      <div class="faq-list" id="faqList"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section id="about">
+  <div class="container">
+    <div class="about-grid">
+      <div>
+        <div class="section-chip" style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);">About WaterMed</div>
+        <div class="about-title" id="about-title-text">Hydrating Communities Since 2018</div>
+        <p class="about-desc" id="about-desc-text">WaterMed started as a single refilling station in Quezon City. Today we serve over 2,400 households across Metro Manila with pure, affordable water delivered to their door.</p>
+        <a href="#shop" class="btn-primary">Order Now →</a>
+      </div>
+      <div class="about-feats">
+        <div class="about-feat"><div class="af-icon">💧</div><div><div class="af-title" id="about-stat1-val">2.4M Liters Delivered</div><div class="af-desc" id="about-stat1-desc">And counting, since day one</div></div></div>
+        <div class="about-feat"><div class="af-icon">🏡</div><div><div class="af-title" id="about-stat2-val">2,400+ Households</div><div class="af-desc" id="about-stat2-desc">Trusted by families in Metro Manila</div></div></div>
+        <div class="about-feat"><div class="af-icon">⭐</div><div><div class="af-title" id="about-stat3-val">4.9 Star Rating</div><div class="af-desc" id="about-stat3-desc">Consistently rated by our customers</div></div></div>
+        <div class="about-feat"><div class="af-icon">🔬</div><div><div class="af-title" id="about-stat4-val">Monthly Lab Tests</div><div class="af-desc" id="about-stat4-desc">Quality audited every 30 days</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer id="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-logo">💧 <span id="footerBrandName">WaterMed</span></div>
+        <p class="footer-about" id="footerTagline">Premium purified water delivered to your door in Metro Manila. DOH certified. 7-stage filtration. Trusted by 2,400+ households since 2018.</p>
+      </div>
+      <div>
+        <div class="footer-col-title">Shop</div>
+        <ul class="footer-links">
+          <li><a href="#shop">Purified Water</a></li><li><a href="#shop">Mineral Water</a></li>
+          <li><a href="#shop">Alkaline Water</a></li><li><a href="#shop">All Products</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Support</div>
+        <ul class="footer-links">
+          <li><a href="#tracking">Track Order</a></li><li><a href="#faq">FAQ</a></li>
+          <li><a onclick="openAccount()" style="cursor:pointer;">My Account</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="footer-col-title">Contact</div>
+        <ul class="footer-links">
+          <li><a id="footerPhone1">0917-555-AQUA</a></li>
+          <li><a id="footerPhone2">(02) 8-555-1234</a></li>
+          <li><a id="footerEmail">hello@watermed.ph</a></li>
+          <li><a>Mon–Sat 7AM–8PM</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 <span id="footerYear">WaterMed</span>. All rights reserved.</span>
+      <span onclick="adminShortcut()" style="color:rgba(255,255,255,.15);font-size:11px;cursor:default;">Admin ·</span>
+    </div>
+  </div>
+</footer>
+
+<!-- CART DRAWER -->
+<div class="cart-overlay" id="cartOverlay" onclick="closeCart()"></div>
+<div class="cart-drawer" id="cartDrawer">
+  <div class="cart-head">
+    <div class="cart-head-title">🛒 Your Cart</div>
+    <span class="cart-close" onclick="closeCart()">×</span>
+  </div>
+  <div class="cart-items" id="cartItems"></div>
+  <div class="cart-foot" id="cartFoot" style="display:none;">
+    <div class="cart-subtotal"><span>Subtotal</span><span id="cartSubtotal">₱0</span></div>
+    <div class="cart-subtotal"><span>Delivery</span><span>₱30</span></div>
+    <div class="cart-total"><span>Total</span><span id="cartTotal">₱0</span></div>
+    <button class="cart-checkout-btn" onclick="openCheckout()">Proceed to Checkout →</button>
+    <span class="cart-continue" onclick="closeCart()">Continue Shopping</span>
+  </div>
+</div>
+
+<!-- CHECKOUT MODAL -->
+<div class="checkout-overlay" id="checkoutOverlay">
+  <div class="checkout-modal">
+    <div class="checkout-head">
+      <div class="checkout-title">Checkout</div>
+      <span style="font-size:24px;cursor:pointer;color:var(--g400);" onclick="closeCheckout()">×</span>
+    </div>
+    <div class="checkout-body" id="checkoutBody"></div>
+  </div>
+</div>
+
+<!-- ACCOUNT MODAL -->
+<div class="acct-overlay" id="acctOverlay" onclick="if(event.target===this)closeAccount()">
+  <div class="acct-modal">
+    <div id="acctContent"></div>
+  </div>
+</div>
+
+<div id="pubToast"></div>
+
+</div><!-- end publicView -->
+
+
+<!-- ╔══════════════════╗ -->
+<!-- ║  ADMIN VIEW      ║ -->
+<!-- ╚══════════════════╝ -->
+<div id="adminView">
+  <div id="sidebar">
+    <div class="sb-logo">
+      <span>💧</span>
+      <div><div id="sb-logo-name">WaterMed</div><span>Admin Panel</span></div>
+    </div>
+    <div class="sb-section">Operations</div>
+    <div class="sb-item active" onclick="showAdmPanel('dashboard',this)"><span class="sb-icon">📊</span><span>Dashboard</span></div>
+    <div class="sb-item" onclick="showAdmPanel('orders',this)"><span class="sb-icon">📦</span><span>Orders</span><span class="sb-badge" id="pendingCount">0</span></div>
+    <div class="sb-section">Catalog</div>
+    <div class="sb-item" onclick="showAdmPanel('products',this)"><span class="sb-icon">🏷️</span><span>Products</span></div>
+    <div class="sb-section">Customers</div>
+    <div class="sb-item" onclick="showAdmPanel('customers',this)"><span class="sb-icon">👥</span><span>All Customers</span></div>
+    <div class="sb-item" onclick="showAdmPanel('rewards',this)"><span class="sb-icon">🏆</span><span>Loyalty & Rewards</span></div>
+    <div class="sb-divider"></div>
+    <div class="sb-item" onclick="showAdmPanel('addorder',this)"><span class="sb-icon">➕</span><span>Add Order</span></div>
+    <div class="sb-item" onclick="showAdmPanel('branding',this)"><span class="sb-icon">⚙️</span><span>Site Settings</span></div>
+    <div class="sb-item" onclick="showAdmPanel('editor',this)"><span class="sb-icon">🖊️</span><span>Page Editor</span></div>
+    <div class="sb-user">
+      <div class="sb-avatar" id="sb-avatar-initials">A</div>
+      <div><div class="sb-user-name" id="sb-user-label">Admin</div><div class="sb-user-role">Owner</div></div>
+      <div class="sb-logout" onclick="doAdminLogout()" title="Sign Out">↩</div>
+    </div>
+  </div>
+
+  <div id="adm-main">
+    <div id="adm-topbar">
+      <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      <div class="topbar-right">
+        <div class="adm-live-dot">Live</div>
+        <div class="topbar-time" id="clock"></div>
+        <button class="filter-btn" onclick="doAdminLogout()">← Back to Site</button>
+      </div>
+    </div>
+
+    <div id="adm-content">
+
+      <!-- DASHBOARD -->
+      <div class="adm-panel active" id="adm-panel-dashboard">
+        <div id="sheetBanner" style="display:none;" class="sheet-banner">
+          ⚠️ Google Sheet not configured. Customer data is stored locally only. <a onclick="showAdmPanel('branding',null)">→ Configure in Site Settings</a>
+        </div>
+        <div class="stat-row">
+          <div class="stat-card" style="--accent:rgba(47,129,247,.1);"><div class="stat-label">Today's Orders</div><div class="stat-num" id="stat-today" style="color:var(--blue);">0</div><div class="stat-sub">All statuses</div></div>
+          <div class="stat-card" style="--accent:rgba(240,180,41,.1);"><div class="stat-label">Pending / Processing</div><div class="stat-num" id="stat-active" style="color:var(--amber);">0</div><div class="stat-sub">Need attention</div></div>
+          <div class="stat-card" style="--accent:rgba(63,185,80,.1);"><div class="stat-label">Revenue Today</div><div class="stat-num" id="stat-revenue" style="color:var(--teal);">₱0</div><div class="stat-sub">Delivered orders</div></div>
+          <div class="stat-card" style="--accent:rgba(188,140,255,.1);"><div class="stat-label">Total Customers</div><div class="stat-num" id="stat-customers" style="color:var(--purple);">0</div><div class="stat-sub">Registered accounts</div></div>
+        </div>
+        <div class="section-head">
+          <div class="section-title">Recent Orders</div>
+          <button class="filter-btn" onclick="showAdmPanel('orders',document.querySelectorAll('.sb-item')[1])">View All →</button>
+        </div>
+        <div class="table-wrap table-scroll">
+          <table class="orders-table">
+            <thead><tr><th>Order ID</th><th>Customer</th><th># Orders</th><th>Status</th><th>Payment</th><th>Method</th><th>Received By</th><th>Actions</th></tr></thead>
+            <tbody id="dashOrdersBody"></tbody>
+          </table>
+        </div>
+        <div class="section-head"><div class="section-title">🏆 Top Customers</div></div>
+        <div class="adm-customers-grid" id="dashTopCustomers"></div>
+      </div>
+
+      <!-- ALL ORDERS -->
+      <div class="adm-panel" id="adm-panel-orders">
+        <div class="section-head">
+          <div class="section-title">All Orders</div>
+          <div class="section-actions">
+            <input class="search-box" type="text" id="orderSearch" placeholder="Search name, ID…" oninput="renderOrders()"/>
+            <button class="filter-btn active" id="fAll" onclick="setFilter('all')">All</button>
+            <button class="filter-btn" id="fPending" onclick="setFilter('pending')">Pending</button>
+            <button class="filter-btn" id="fProcessing" onclick="setFilter('processing')">Processing</button>
+            <button class="filter-btn" id="fShipped" onclick="setFilter('shipped')">Shipped</button>
+            <button class="filter-btn" id="fDelivered" onclick="setFilter('delivered')">Delivered</button>
+          </div>
+        </div>
+        <div class="table-wrap table-scroll">
+          <table class="orders-table">
+            <thead><tr><th>Order ID</th><th>Customer Name</th><th># Orders</th><th>Status</th><th>Payment Status</th><th>Method</th><th>Received By</th><th>Actions</th></tr></thead>
+            <tbody id="allOrdersBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PRODUCTS -->
+      <div class="adm-panel" id="adm-panel-products">
+        <div class="section-head">
+          <div class="section-title">Product Catalog</div>
+          <button class="filter-btn active" onclick="openProductModal()">+ Add Product</button>
+        </div>
+        <div class="adm-products-grid" id="admProductsGrid"></div>
+      </div>
+
+      <!-- CUSTOMERS -->
+      <div class="adm-panel" id="adm-panel-customers">
+        <div class="section-head">
+          <div class="section-title">Customer Accounts</div>
+          <div class="section-actions">
+            <input class="search-box" type="text" id="custSearch" placeholder="Search customers…" oninput="renderCustomers()"/>
+            <button class="filter-btn active" onclick="openAddCustomerModal()" style="background:var(--teal-dim);border-color:var(--teal);color:var(--teal);">👤+ Add Customer</button>
+            <button class="filter-btn" onclick="loadFromSheet()">🔄 Sync Sheet</button>
+            <button class="filter-btn" onclick="showAdmPanel('rewards',null)">🏆 Rewards</button>
+          </div>
+        </div>
+        <div class="customers-layout">
+          <div class="table-wrap table-scroll">
+            <table class="customer-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Since</th>
+                  <th>Orders</th>
+                  <th>Total Spent</th>
+                  <th>Rewarded</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="customersTableBody"></tbody>
+            </table>
+          </div>
+          <div class="customers-toolbar-note">Tip: use the table for quick edits and deletion, then open a profile card for full customer details.</div>
+          <div class="adm-customers-grid" id="customersGrid"></div>
+        </div>
+      </div>
+
+      <!-- REWARDS -->
+      <div class="adm-panel" id="adm-panel-rewards">
+        <div class="rewards-header">
+          <div style="font-size:48px;">🏆</div>
+          <div>
+            <div style="font-family:var(--font-h);font-size:28px;letter-spacing:.03em;color:var(--amber);">Loyalty & Rewards</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:4px;">Reward your most loyal customers.</div>
+          </div>
+          <button class="filter-btn" style="margin-left:auto;" onclick="openSendRewardModal()">🎁 Send Reward</button>
+        </div>
+        <div class="rewards-stats" id="rewardsStats"></div>
+        <div class="section-head"><div class="section-title">Loyal Customers</div></div>
+        <div class="adm-customers-grid" id="loyalGrid"></div>
+      </div>
+
+      <!-- ADD ORDER -->
+      <div class="adm-panel" id="adm-panel-addorder">
+        <div class="section-head"><div class="section-title">Add New Order</div></div>
+        <div style="max-width:640px;">
+          <div class="table-wrap padded">
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Customer Name *</div><input class="modal-input" id="ao-name" type="text" placeholder="e.g. Pedro Reyes"/></div>
+              <div class="modal-field"><div class="modal-label">Contact Number *</div><input class="modal-input" id="ao-phone" type="text" placeholder="09XX-XXX-XXXX"/></div>
+            </div>
+            <div class="modal-field"><div class="modal-label">Delivery Address *</div><input class="modal-input" id="ao-addr" type="text" placeholder="House no., Street, Barangay, City"/></div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Product</div>
+                <select class="modal-select" id="ao-product" onchange="calcAddOrderTotal()"><option value="">-- Select Product --</option></select>
+              </div>
+              <div class="modal-field"><div class="modal-label">Quantity *</div><input class="modal-input" id="ao-qty" type="number" min="1" value="1" oninput="calcAddOrderTotal()"/></div>
+            </div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Payment Method</div>
+                <select class="modal-select" id="ao-pay">
+                  <option value="Cash on Delivery">Cash on Delivery</option>
+                  <option value="GCash">GCash</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </select>
+              </div>
+              <div class="modal-field"><div class="modal-label">Payment Status</div>
+                <select class="modal-select" id="ao-paystatus"><option value="Unpaid">Unpaid</option><option value="Paid">Paid</option></select>
+              </div>
+            </div>
+            <div class="modal-field"><div class="modal-label">Received By</div><input class="modal-input" id="ao-receiver" type="text" placeholder="Staff name"/></div>
+            <div class="modal-field"><div class="modal-label">Notes (optional)</div><textarea class="modal-textarea" id="ao-notes" style="min-height:60px;" placeholder="Gate code, landmarks…"></textarea></div>
+            <div style="padding:14px;background:var(--bg3);border-radius:var(--r);font-family:var(--font-m);font-size:13px;color:var(--amber);margin-bottom:16px;" id="ao-preview">Select a product and quantity to see total</div>
+            <div style="display:flex;gap:10px;">
+              <button class="modal-btn primary" onclick="submitAddOrder()">✓ Create Order</button>
+              <button class="modal-btn secondary" onclick="resetAddOrder()">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SITE SETTINGS -->
+      <div class="adm-panel" id="adm-panel-branding">
+        <div class="section-head"><div class="section-title">Site Settings & Branding</div></div>
+        <div class="branding-grid">
+          <div class="brand-card">
+            <div class="brand-card-title">🏷️ Logo & Business Name</div>
+            <div class="logo-preview-box" id="logoPreviewBox" onclick="document.getElementById('logoFileInput').click()">
+              <div class="upload-hint">📁<br/>Click to upload logo<br/><small style="color:var(--muted);font-size:11px;">PNG, JPG, SVG</small></div>
+              <input type="file" id="logoFileInput" accept="image/*" onchange="handleLogoUpload(this)" style="display:none;"/>
+            </div>
+            <div class="modal-field"><div class="modal-label">Business Name</div><input class="modal-input" id="brand-name" type="text" value="WaterMed"/></div>
+            <div class="modal-field"><div class="modal-label">Business Tagline</div><input class="modal-input" id="brand-tagline" type="text" value="Purified Water Refilling Station"/></div>
+            <button class="modal-btn primary" style="margin-top:4px;" onclick="saveBranding()">Save Branding</button>
+          </div>
+          <div class="brand-card">
+            <div class="brand-card-title">📞 Contact & Info</div>
+            <div class="modal-field"><div class="modal-label">Primary Contact Number</div><input class="modal-input" id="brand-phone" type="text" value="0917-555-AQUA"/></div>
+            <div class="modal-field"><div class="modal-label">Secondary Number</div><input class="modal-input" id="brand-phone2" type="text" value="(02) 8-555-1234"/></div>
+            <div class="modal-field"><div class="modal-label">Email Address</div><input class="modal-input" id="brand-email" type="email" value="hello@watermed.ph"/></div>
+            <div class="modal-field"><div class="modal-label">Address / Location</div><textarea class="modal-textarea" id="brand-address" style="min-height:60px;">123 Purified St., Quezon City, Metro Manila</textarea></div>
+            <button class="modal-btn primary" style="margin-top:4px;" onclick="saveContact()">Save Contact Info</button>
+          </div>
+
+          <!-- ABOUT SECTION EDITOR -->
+          <div class="brand-card" style="grid-column:1/-1;">
+            <div class="brand-card-title">📝 About Section Content</div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Section Title</div><input class="modal-input" id="ae-title" type="text" placeholder="Hydrating Communities Since 2018"/></div>
+              <div class="modal-field"><div class="modal-label">Year Founded (for footer)</div><input class="modal-input" id="ae-year" type="text" placeholder="2018"/></div>
+            </div>
+            <div class="modal-field"><div class="modal-label">Description Paragraph</div><textarea class="modal-textarea" id="ae-desc" placeholder="WaterMed started as a single refilling station…"></textarea></div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Stat 1 – Value</div><input class="modal-input" id="ae-stat1val" type="text" placeholder="2.4M Liters Delivered"/></div>
+              <div class="modal-field"><div class="modal-label">Stat 1 – Sub-label</div><input class="modal-input" id="ae-stat1desc" type="text" placeholder="And counting, since day one"/></div>
+            </div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Stat 2 – Value</div><input class="modal-input" id="ae-stat2val" type="text" placeholder="2,400+ Households"/></div>
+              <div class="modal-field"><div class="modal-label">Stat 2 – Sub-label</div><input class="modal-input" id="ae-stat2desc" type="text" placeholder="Trusted by families in Metro Manila"/></div>
+            </div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Stat 3 – Value</div><input class="modal-input" id="ae-stat3val" type="text" placeholder="4.9 Star Rating"/></div>
+              <div class="modal-field"><div class="modal-label">Stat 3 – Sub-label</div><input class="modal-input" id="ae-stat3desc" type="text" placeholder="Consistently rated by our customers"/></div>
+            </div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Stat 4 – Value</div><input class="modal-input" id="ae-stat4val" type="text" placeholder="Monthly Lab Tests"/></div>
+              <div class="modal-field"><div class="modal-label">Stat 4 – Sub-label</div><input class="modal-input" id="ae-stat4desc" type="text" placeholder="Quality audited every 30 days"/></div>
+            </div>
+            <div class="modal-field"><div class="modal-label">Hero Households Count (shown in hero section)</div><input class="modal-input" id="ae-households" type="text" placeholder="2,400+"/></div>
+            <button class="modal-btn primary" style="max-width:240px;" onclick="saveAboutSettings()">💾 Save About Section</button>
+          </div>
+
+          <!-- GOOGLE SHEET CONFIG -->
+          <div class="brand-card" style="grid-column:1/-1;">
+            <div class="brand-card-title">📊 Google Sheet Database</div>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6;">Paste your Google Apps Script Web App URL here to sync customer registrations to Google Sheets. You can also store the direct spreadsheet link so the admin can open the sheet quickly from the dashboard.</p>
+            <div class="modal-field"><div class="modal-label">Apps Script Web App URL</div><input class="modal-input" id="sheet-url-input" type="text" placeholder="https://script.google.com/macros/s/…/exec"/></div>
+            <div class="modal-field"><div class="modal-label">Spreadsheet Link</div><input class="modal-input" id="sheet-link-input" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."/></div>
+            <div style="display:flex;gap:10px;">
+              <button class="modal-btn primary" style="flex:none;padding:12px 24px;" onclick="saveSheetSettings()">Save Links</button>
+              <button class="modal-btn secondary" style="flex:none;padding:12px 24px;" onclick="loadFromSheet()">🔄 Test & Sync</button>
+              <button class="modal-btn secondary" style="flex:none;padding:12px 24px;" onclick="openSpreadsheetLink()">Open Spreadsheet</button>
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:var(--muted);" id="sheetStatus">Status: <span id="sheetStatusText">Not configured</span></div>
+          </div>
+
+          <!-- ADMIN CREDENTIALS -->
+          <div class="brand-card">
+            <div class="brand-card-title">🔐 Admin Credentials</div>
+            <div class="modal-field"><div class="modal-label">New Username</div><input class="modal-input" id="brand-user" type="text" placeholder="admin"/></div>
+            <div class="modal-field"><div class="modal-label">Current Password</div><input class="modal-input" id="brand-curr-pw" type="password" placeholder="Enter current password"/></div>
+            <div class="modal-field"><div class="modal-label">New Password</div><input class="modal-input" id="brand-new-pw" type="password" placeholder="New password"/></div>
+            <div class="modal-field"><div class="modal-label">Confirm New Password</div><input class="modal-input" id="brand-confirm-pw" type="password" placeholder="Confirm new password"/></div>
+            <button class="modal-btn primary" onclick="saveCredentials()">Update Credentials</button>
+          </div>
+          <div class="brand-card">
+            <div class="brand-card-title">🕐 Business Hours</div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Mon-Sat Open</div><input class="modal-input" id="bh-weekday-open" type="time" value="07:00"/></div>
+              <div class="modal-field"><div class="modal-label">Mon-Sat Close</div><input class="modal-input" id="bh-weekday-close" type="time" value="20:00"/></div>
+            </div>
+            <div class="field-row">
+              <div class="modal-field"><div class="modal-label">Sunday Open</div><input class="modal-input" id="bh-sunday-open" type="time" value="08:00"/></div>
+              <div class="modal-field"><div class="modal-label">Sunday Close</div><input class="modal-input" id="bh-sunday-close" type="time" value="17:00"/></div>
+            </div>
+            <button class="modal-btn primary" onclick="showAdminToast('✓ Business hours saved','success')">Save Hours</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="adm-panel" id="adm-panel-editor">
+        <div class="section-head">
+          <div class="section-title">Whole Page Editor</div>
+          <div class="section-actions">
+            <button class="filter-btn" onclick="loadPublicPageEditor()">Reload Current Page</button>
+            <button class="filter-btn" onclick="previewPublicPageEditor()">Preview Changes</button>
+          </div>
+        </div>
+        <div class="table-wrap padded">
+          <div class="editor-help">Edit the public page markup directly here when you want full control over the page. This is useful for changing sections like About, hero text, testimonials, layout blocks, and other custom content without leaving the admin side. Keep important IDs such as <code>pubProductsGrid</code>, <code>acctContent</code>, <code>cartDrawer</code>, and <code>footerBrandName</code> if you still want the built-in features to work.</div>
+          <div class="modal-field">
+            <div class="modal-label">Public Page HTML</div>
+            <textarea class="modal-textarea editor-textarea" id="page-html-editor" spellcheck="false"></textarea>
+          </div>
+          <div class="editor-actions">
+            <button class="modal-btn primary" style="flex:none;padding:12px 24px;" onclick="savePublicPageEditor()">Save Page</button>
+            <button class="modal-btn secondary" style="flex:none;padding:12px 24px;" onclick="previewPublicPageEditor()">Preview</button>
+            <button class="modal-btn secondary" style="flex:none;padding:12px 24px;" onclick="resetPublicPageEditor()">Reset to Original</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /#adm-content -->
+  </div><!-- /#adm-main -->
+
+  <!-- ADMIN MODALS -->
+  <div class="adm-modal-overlay" id="orderModal">
+    <div class="adm-modal adm-modal-wide">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div><div class="modal-title" id="om-title">Order Details</div><div class="modal-sub" id="om-id"></div></div>
+        <span class="modal-close" onclick="document.getElementById('orderModal').classList.remove('open')">×</span>
+      </div>
+      <div id="om-body"></div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" id="om-advance" onclick="advanceFromModal()">Advance Status →</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('orderModal').classList.remove('open')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="adm-modal-overlay" id="custModal">
+    <div class="adm-modal">
+      <div id="cm-body"></div>
+      <div class="modal-actions">
+        <button class="modal-btn secondary" onclick="editCustomerFromProfile()">Edit Customer</button>
+        <button class="modal-btn primary" onclick="openRewardFromCust()">🎁 Send Reward</button>
+        <button class="modal-btn danger" onclick="deleteActiveCustomer()">Delete Customer</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('custModal').classList.remove('open')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD CUSTOMER MODAL -->
+  <div class="adm-modal-overlay" id="addCustModal">
+    <div class="adm-modal">
+      <span class="modal-close" onclick="document.getElementById('addCustModal').classList.remove('open')">×</span>
+      <input id="ac-edit-id" type="hidden"/>
+      <div class="modal-title" id="addCustTitle">👤 Add Customer</div>
+      <div class="modal-sub" id="addCustSubtitle">Manually add a customer to the system.</div>
+      <div class="field-row">
+        <div class="modal-field"><div class="modal-label">Full Name *</div><input class="modal-input" id="ac-name" type="text" placeholder="e.g. Maria Santos"/></div>
+        <div class="modal-field"><div class="modal-label">Phone *</div><input class="modal-input" id="ac-phone" type="text" placeholder="09XX-XXX-XXXX"/></div>
+      </div>
+      <div class="field-row">
+        <div class="modal-field"><div class="modal-label">Email</div><input class="modal-input" id="ac-email" type="email" placeholder="email@example.com"/></div>
+        <div class="modal-field"><div class="modal-label">Temporary Password</div><input class="modal-input" id="ac-pass" type="text" placeholder="Set a password for them"/></div>
+      </div>
+      <div class="modal-field"><div class="modal-label">Address</div><input class="modal-input" id="ac-address" type="text" placeholder="House no., Street, Barangay, City"/></div>
+      <div class="field-row">
+        <div class="modal-field"><div class="modal-label">Customer Since</div><input class="modal-input" id="ac-since" type="month"/></div>
+        <div class="modal-field"><div class="modal-label">Last Order</div><input class="modal-input" id="ac-last-order" type="date"/></div>
+      </div>
+      <div class="field-row">
+        <div class="modal-field"><div class="modal-label">Total Orders</div><input class="modal-input" id="ac-total-orders" type="number" min="0" value="0"/></div>
+        <div class="modal-field"><div class="modal-label">Total Spent</div><input class="modal-input" id="ac-total-spent" type="number" min="0" step="0.01" value="0"/></div>
+      </div>
+      <div class="modal-field"><div class="modal-label">Notes</div><textarea class="modal-textarea" id="ac-notes" style="min-height:60px;" placeholder="Preferences, gate code, etc."></textarea></div>
+      <label class="modal-check"><input id="ac-rewarded" type="checkbox"/> Customer already rewarded</label>
+      <div class="modal-actions">
+        <button class="modal-btn primary" id="addCustSubmitBtn" onclick="submitAddCustomer()">✓ Add Customer</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('addCustModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="adm-modal-overlay" id="rewardModal">
+    <div class="adm-modal">
+      <div class="modal-title">🎁 Send Reward</div>
+      <div class="modal-sub">Surprise a loyal customer.</div>
+      <div class="modal-field"><div class="modal-label">Select Customer</div><select class="modal-select" id="rm-cust"></select></div>
+      <div class="modal-field"><div class="modal-label">Reward Type</div>
+        <select class="modal-select" id="rm-type">
+          <option value="free">Free Gallon (1 pc)</option>
+          <option value="discount">10% Discount Next Order</option>
+          <option value="priority">Priority Delivery</option>
+          <option value="gift">Holiday Gift Pack</option>
+          <option value="custom">Custom Message</option>
+        </select>
+      </div>
+      <div class="modal-field"><div class="modal-label">Personal Message</div><textarea class="modal-textarea" id="rm-msg" placeholder="Thank you for being a loyal WaterMed customer!"></textarea></div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="sendReward()">Send Reward 🎁</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('rewardModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="adm-modal-overlay" id="productModal">
+    <div class="adm-modal">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+        <div class="modal-title" id="pm-title">Add Product</div>
+        <span class="modal-close" onclick="document.getElementById('productModal').classList.remove('open')">×</span>
+      </div>
+      <div class="modal-sub">Manage your product catalog</div>
+      <div class="modal-field"><div class="modal-label">Product Name *</div><input class="modal-input" id="pm-name" type="text" placeholder="e.g. Purified Water 5-Gallon"/></div>
+      <div class="field-row">
+        <div class="modal-field"><div class="modal-label">Price (₱) *</div><input class="modal-input" id="pm-price" type="number" min="0" placeholder="30"/></div>
+        <div class="modal-field"><div class="modal-label">Category</div>
+          <select class="modal-select" id="pm-cat">
+            <option>Purified Water</option><option>Mineral Water</option><option>Alkaline Water</option><option>Sparkling Water</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-field"><div class="modal-label">Description</div><textarea class="modal-textarea" id="pm-desc" style="min-height:70px;"></textarea></div>
+      <div class="modal-field"><div class="modal-label">Image URL (optional)</div><input class="modal-input" id="pm-img" type="text" placeholder="https://…"/></div>
+      <div class="modal-field"><div class="modal-label">Emoji Icon</div><input class="modal-input" id="pm-emoji" type="text" placeholder="💧" maxlength="4" value="💧"/></div>
+      <input type="hidden" id="pm-edit-id"/>
+      <div class="modal-actions">
+        <button class="modal-btn primary" onclick="saveProduct()">Save Product</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('productModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="adm-modal-overlay" id="deleteModal">
+    <div class="adm-modal" style="width:380px;">
+      <div class="modal-title">Confirm Delete</div>
+      <div class="modal-sub" id="delete-msg">Are you sure? This cannot be undone.</div>
+      <div class="modal-actions">
+        <button class="modal-btn danger" onclick="confirmDelete()">Delete</button>
+        <button class="modal-btn secondary" onclick="document.getElementById('deleteModal').classList.remove('open')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="adminToast"></div>
+</div><!-- end adminView -->
+
+
+<script>
+/* ═══════════════════════════════════════════════
+   ██████╗ ██████╗ ███╗   ██╗███████╗██╗ ██████╗
+   ██╔════╝██╔═══██╗████╗  ██║██╔════╝██║██╔════╝
+   ██║     ██║   ██║██╔██╗ ██║█████╗  ██║██║  ███╗
+   ██║     ██║   ██║██║╚██╗██║██╔══╝  ██║██║   ██║
+   ╚██████╗╚██████╔╝██║ ╚████║██║     ██║╚██████╔╝
+    ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝     ╚═╝ ╚═════╝
+═══════════════════════════════════════════════ */
+
+/* ═══ USER SETS THIS — Paste your Apps Script URL ═══ */
+function safeGet(key, fallback = '') {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value;
+  } catch (e) {
+    console.warn('Storage read failed for', key, e);
+    return fallback;
+  }
+}
+function safeSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    console.warn('Storage write failed for', key, e);
+    return false;
+  }
+}
+function safeRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {
+    console.warn('Storage remove failed for', key, e);
+  }
+}
+function safeHas(key) {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch (e) {
+    return false;
+  }
+}
+function safeReadJson(key, fallback) {
+  try {
+    const raw = safeGet(key, '');
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+let SHEET_URL = safeGet('wm_sheet_url', '');
+let SHEET_LINK = safeGet('wm_sheet_link', '');
+let ADMIN_SESSION = safeGet('wm_admin_session', 'false') === 'true';
+
+/* ═══ ADMIN CREDENTIALS (changeable from Site Settings) ═══ */
+let ADMIN_CREDS = safeReadJson('wm_admin_creds', {"user":"admin","pass":"watermed2025"});
+
+/* ═══ BRANDING ═══ */
+let BRANDING = safeReadJson('wm_branding', {"name":"WaterMed","tagline":"Purified Water Refilling Station","phone":"0917-555-AQUA","phone2":"(02) 8-555-1234","email":"hello@watermed.ph","address":"123 Purified St., QC","logoUrl":null});
+let DEFAULT_PUBLIC_VIEW_HTML = '';
+
+/* ═══ ADMIN SHORTCUT (click the invisible footer dot) ═══ */
+let adminClickCount = 0, adminClickTimer;
+function adminShortcut() {
+  adminClickCount++;
+  clearTimeout(adminClickTimer);
+  adminClickTimer = setTimeout(() => adminClickCount = 0, 2000);
+  if (adminClickCount >= 3) { adminClickCount = 0; openAccount(); }
+}
+
+/* ═══════════════════════════════════════════
+   INTEGRATION: ACTIVATE ADMIN MODE
+═══════════════════════════════════════════ */
+function activateAdminMode() {
+  document.body.classList.add('admin-mode');
+  safeSet('wm_admin_session', 'true');
+  ADMIN_SESSION = true;
+  document.title = BRANDING.name + ' — Admin Panel';
+  closeAccount();
+  // Load admin UI
+  init();
+  // Apply saved about settings
+  applyAboutSettings();
+  // Show sheet banner if not configured
+  document.getElementById('sheetBanner').style.display = SHEET_URL ? 'none' : 'flex';
+  document.getElementById('sheet-url-input').value = SHEET_URL;
+  document.getElementById('sheet-link-input').value = SHEET_LINK;
+  document.getElementById('sheetStatusText').textContent = SHEET_URL ? 'Configured ✓' : 'Not configured';
+  // Load about editor fields
+  loadAboutSettings();
+  loadPublicPageEditor();
+  // Sync from sheet
+  loadFromSheet();
+}
+
+function doAdminLogout() {
+  document.body.classList.remove('admin-mode');
+  safeRemove('wm_admin_session');
+  ADMIN_SESSION = false;
+  document.title = BRANDING.name + ' – Purified Water Refilling Station';
+  currentUser = null;
+  updateNavAccount();
+  clearInterval(admClockInterval);
+  showPubToast('Signed out of Admin Portal');
+}
+
+/* ═══════════════════════════════════════════
+   GOOGLE SHEETS INTEGRATION
+═══════════════════════════════════════════ */
+async function loadFromSheet() {
+  if (!SHEET_URL) {
+    loadCustomersFromLocal();
+    refreshCustomerViews();
+    return;
+  }
+  try {
+    showAdminToast('🔄 Syncing from Google Sheets…', '');
+    const res = await fetch(SHEET_URL + '?action=getCustomers&t=' + Date.now());
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      const deletedIds = getDeletedCustomerIds();
+      const localCustomers = safeReadJson('wm_customers', []).map(normalizeCustomerRecord);
+      const merged = new Map();
+      data.map(normalizeCustomerRecord)
+        .filter(customer => !deletedIds.includes(customer.id))
+        .forEach(customer => merged.set(customer.id, customer));
+      localCustomers
+        .filter(customer => !deletedIds.includes(customer.id))
+        .forEach(customer => merged.set(customer.id, customer));
+      customers = [...merged.values()];
+      saveCustomersLocal();
+      showAdminToast('✓ Synced ' + data.length + ' customers from Sheet', 'success');
+      document.getElementById('sheetStatusText').textContent = 'Last sync: ' + new Date().toLocaleTimeString();
+      document.getElementById('sheetBanner').style.display = 'none';
+    } else {
+      showAdminToast('Sheet is empty — no customers yet', '');
+      loadCustomersFromLocal();
+    }
+    refreshCustomerViews();
+  } catch (e) {
+    console.error('Sheet sync error:', e);
+    showAdminToast('⚠ Could not reach Google Sheet. Using local data.', 'warn');
+    document.getElementById('sheetStatusText').textContent = 'Error: ' + e.message;
+    loadCustomersFromLocal();
+    refreshCustomerViews();
+  }
+}
+
+async function syncCustomerToSheet(customer, action = 'upsertCustomer') {
+  saveCustomersLocal();
+  if (!SHEET_URL) return;
+  try {
+    await fetch(SHEET_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, data: customer })
+    });
+  } catch (e) { console.error('Sheet write error:', e); }
+}
+async function saveCustomerToSheet(customer) {
+  return syncCustomerToSheet(customer, 'upsertCustomer');
+}
+
+async function deleteCustomerFromSheet(customerId) {
+  saveCustomersLocal();
+  if (!SHEET_URL) return;
+  try {
+    await fetch(SHEET_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deleteCustomer', data: { id: customerId } })
+    });
+  } catch (e) { console.error('Sheet delete error:', e); }
+}
+
+function saveSheetSettings() {
+  SHEET_URL = document.getElementById('sheet-url-input').value.trim();
+  SHEET_LINK = document.getElementById('sheet-link-input').value.trim();
+  safeSet('wm_sheet_url', SHEET_URL);
+  safeSet('wm_sheet_link', SHEET_LINK);
+  persistAppState();
+  document.getElementById('sheetStatusText').textContent = SHEET_URL ? 'Saved — click Test & Sync to verify' : 'Not configured';
+  document.getElementById('sheetBanner').style.display = SHEET_URL ? 'none' : 'flex';
+  showAdminToast('✓ Sheet settings saved', 'success');
+}
+
+function openSpreadsheetLink() {
+  if (!SHEET_LINK) {
+    showAdminToast('⚠ Add the spreadsheet link first', 'warn');
+    return;
+  }
+  window.open(SHEET_LINK, '_blank', 'noopener');
+}
+
+/* ═══════════════════════════════════════════
+   ABOUT SECTION EDITING
+═══════════════════════════════════════════ */
+function loadAboutSettings() {
+  const s = safeReadJson('wm_about', {});
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  set('ae-title', s.title || 'Hydrating Communities Since 2018');
+  set('ae-desc', s.desc || 'WaterMed started as a single refilling station in Quezon City. Today we serve over 2,400 households across Metro Manila with pure, affordable water delivered to their door.');
+  set('ae-stat1val', s.stat1val || '2.4M Liters Delivered');
+  set('ae-stat1desc', s.stat1desc || 'And counting, since day one');
+  set('ae-stat2val', s.stat2val || '2,400+ Households');
+  set('ae-stat2desc', s.stat2desc || 'Trusted by families in Metro Manila');
+  set('ae-stat3val', s.stat3val || '4.9 Star Rating');
+  set('ae-stat3desc', s.stat3desc || 'Consistently rated by our customers');
+  set('ae-stat4val', s.stat4val || 'Monthly Lab Tests');
+  set('ae-stat4desc', s.stat4desc || 'Quality audited every 30 days');
+  set('ae-year', s.year || '2018');
+  set('ae-households', s.households || '2,400+');
+}
+
+function saveAboutSettings() {
+  const get = id => (document.getElementById(id) || {}).value || '';
+  const s = {
+    title: get('ae-title'), desc: get('ae-desc'),
+    stat1val: get('ae-stat1val'), stat1desc: get('ae-stat1desc'),
+    stat2val: get('ae-stat2val'), stat2desc: get('ae-stat2desc'),
+    stat3val: get('ae-stat3val'), stat3desc: get('ae-stat3desc'),
+    stat4val: get('ae-stat4val'), stat4desc: get('ae-stat4desc'),
+    year: get('ae-year'), households: get('ae-households')
+  };
+  safeSet('wm_about', JSON.stringify(s));
+  applyAboutSettings();
+  showAdminToast('✓ About section updated! Changes reflect on the public site.', 'success');
+}
+
+function applyAboutSettings() {
+  const s = safeReadJson('wm_about', {});
+  const setText = (id, val) => { const el = document.getElementById(id); if (el && val) el.textContent = val; };
+  setText('about-title-text', s.title);
+  setText('about-desc-text', s.desc);
+  setText('about-stat1-val', s.stat1val);
+  setText('about-stat1-desc', s.stat1desc);
+  setText('about-stat2-val', s.stat2val);
+  setText('about-stat2-desc', s.stat2desc);
+  setText('about-stat3-val', s.stat3val);
+  setText('about-stat3-desc', s.stat3desc);
+  setText('about-stat4-val', s.stat4val);
+  setText('about-stat4-desc', s.stat4desc);
+  if (s.households) { const el = document.getElementById('heroHouseholds'); if (el) el.textContent = s.households; }
+  if (s.year) { const el = document.getElementById('footerYear'); if (el) el.textContent = s.year; }
+}
+
+/* ═══════════════════════════════════════════
+   ADD CUSTOMER MODAL (admin)
+═══════════════════════════════════════════ */
+function openAddCustomerModal(id = '') {
+  const set = (id, value = '') => { const el = document.getElementById(id); if (el) el.value = value; };
+  const rewarded = document.getElementById('ac-rewarded');
+  if (id) {
+    const customer = customers.find(c => c.id === id);
+    if (!customer) return;
+    document.getElementById('ac-edit-id').value = customer.id;
+    document.getElementById('addCustTitle').textContent = 'Edit Customer';
+    document.getElementById('addCustSubtitle').textContent = 'Update the customer profile, stats, and notes.';
+    document.getElementById('addCustSubmitBtn').textContent = 'Save Customer';
+    set('ac-name', customer.name);
+    set('ac-phone', customer.phone);
+    set('ac-email', customer.email || '');
+    set('ac-pass', customer.password || '');
+    set('ac-address', customer.address || '');
+    set('ac-since', customer.since || '');
+    set('ac-last-order', customer.lastOrder && customer.lastOrder !== '—' ? customer.lastOrder : '');
+    set('ac-total-orders', customer.totalOrders || 0);
+    set('ac-total-spent', customer.totalSpent || 0);
+    set('ac-notes', customer.notes || '');
+    if (rewarded) rewarded.checked = !!customer.rewarded;
+  } else {
+    document.getElementById('ac-edit-id').value = '';
+    document.getElementById('addCustTitle').textContent = '👤 Add Customer';
+    document.getElementById('addCustSubtitle').textContent = 'Manually add a customer to the system.';
+    document.getElementById('addCustSubmitBtn').textContent = '✓ Add Customer';
+    ['ac-name','ac-phone','ac-email','ac-pass','ac-address','ac-notes','ac-last-order'].forEach(id => set(id, ''));
+    set('ac-since', new Date().toISOString().slice(0, 7));
+    set('ac-total-orders', 0);
+    set('ac-total-spent', 0);
+    if (rewarded) rewarded.checked = false;
+  }
+  document.getElementById('addCustModal').classList.add('open');
+}
+
+async function submitAddCustomer() {
+  const editId = document.getElementById('ac-edit-id').value.trim();
+  const name = document.getElementById('ac-name').value.trim();
+  const phone = document.getElementById('ac-phone').value.trim();
+  const email = document.getElementById('ac-email').value.trim();
+  const pass = document.getElementById('ac-pass').value.trim();
+  const address = document.getElementById('ac-address').value.trim();
+  const notes = document.getElementById('ac-notes').value.trim();
+  const since = document.getElementById('ac-since').value || new Date().toISOString().slice(0, 7);
+  const lastOrder = document.getElementById('ac-last-order').value || '—';
+  const totalOrders = parseInt(document.getElementById('ac-total-orders').value, 10) || 0;
+  const totalSpent = parseFloat(document.getElementById('ac-total-spent').value) || 0;
+  const rewarded = document.getElementById('ac-rewarded').checked;
+  if (!name || !phone) { showAdminToast('⚠ Name and phone are required', ''); return; }
+
+  const newCust = normalizeCustomerRecord({
+    id: editId || nextCustomerId(),
+    name, phone, email, address,
+    password: pass,
+    since,
+    totalOrders,
+    totalSpent,
+    lastOrder,
+    notes,
+    rewarded
+  });
+
+  const existingIndex = customers.findIndex(c => c.id === newCust.id);
+  if (existingIndex >= 0) customers[existingIndex] = {...customers[existingIndex], ...newCust};
+  else customers.push(newCust);
+
+  clearDeletedCustomerMark(newCust.id);
+  await syncCustomerToSheet(newCust);
+  document.getElementById('addCustModal').classList.remove('open');
+  refreshCustomerViews();
+  showAdminToast(editId ? '✓ Customer updated!' : '✓ Customer ' + name + ' added!', 'success');
+}
+
+/* ═══════════════════════════════════════════
+   PUBLIC SITE JS
+═══════════════════════════════════════════ */
+let cart = [], currentUser = null, checkoutStep = 1;
+let checkoutDraft = {name:'', phone:'', address:'', notes:'', payment:'Cash on Delivery'};
+
+// Public products list (synced with admin products)
+const pubProducts = [
+  {id:'P001',name:'Purified Water 5-Gallon',price:30,category:'Purified Water',desc:'7-stage purified drinking water.',emoji:'💧',tag:'Best Value'},
+  {id:'P002',name:'Mineral Water 5-Gallon',price:35,category:'Mineral Water',desc:'Natural mineral water enriched with essential minerals.',emoji:'🌊',tag:'Popular'},
+  {id:'P003',name:'Alkaline Water 5-Gallon',price:45,category:'Alkaline Water',desc:'pH 8.5+ alkaline water for optimal hydration.',emoji:'⚡',tag:'Premium'},
+  {id:'P004',name:'Purified Water 1.5L',price:15,category:'Purified Water',desc:'Convenient 1.5L bottle of purified water.',emoji:'🍶',tag:''},
+  {id:'P005',name:'Mineral Water 500ml',price:10,category:'Mineral Water',desc:'500ml mineral water bottle, ideal for on-the-go.',emoji:'🥤',tag:''},
+];
+let pubActiveCategory = 'All';
+
+function renderCategoryTabs() {
+  const cats = ['All', ...new Set(pubProducts.map(p => p.category))];
+  document.getElementById('catTabs').innerHTML = cats.map(c =>
+    `<button class="cat-tab ${c === pubActiveCategory ? 'active' : ''}" onclick="setCategory('${c}')">${c}</button>`
+  ).join('');
+}
+function setCategory(cat) { pubActiveCategory = cat; renderCategoryTabs(); renderPubProducts(); }
+function renderPubProducts() {
+  const list = pubActiveCategory === 'All' ? pubProducts : pubProducts.filter(p => p.category === pubActiveCategory);
+  document.getElementById('pubProductsGrid').innerHTML = list.map(p => `
+    <div class="pub-product-card">
+      <div class="pc-img-pub">${p.emoji}${p.tag ? `<span class="pc-tag">${p.tag}</span>` : ''}</div>
+      <div class="pc-body-pub">
+        <div class="pc-cat">${p.category}</div>
+        <div class="pc-name-pub">${p.name}</div>
+        <div class="pc-desc-pub">${p.desc}</div>
+        <div class="pc-footer">
+          <div class="pc-price-pub">₱${p.price}</div>
+          <button class="add-cart-btn" onclick="addToCart('${p.id}')">Add to Cart</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+/* CART */
+function addToCart(id) {
+  const p = pubProducts.find(x => x.id === id);
+  if (!p) return;
+  const ex = cart.find(c => c.id === id);
+  if (ex) ex.qty++;
+  else cart.push({ id: p.id, name: p.name, price: p.price, emoji: p.emoji, qty: 1 });
+  updateCartUI();
+  showPubToast(`✓ ${p.name} added to cart`, 'success');
+}
+function updateCartUI() {
+  const total = cart.reduce((s, c) => s + c.qty, 0);
+  const cc = document.getElementById('cartCount');
+  cc.textContent = total;
+  cc.classList.toggle('show', total > 0);
+  const ci = document.getElementById('cartItems');
+  const cf = document.getElementById('cartFoot');
+  if (!cart.length) {
+    ci.innerHTML = '<div class="cart-empty">🛒<br/><br/>Your cart is empty</div>';
+    cf.style.display = 'none'; return;
+  }
+  ci.innerHTML = cart.map(c => `
+    <div class="cart-item">
+      <div class="ci-img">${c.emoji}</div>
+      <div class="ci-info">
+        <div class="ci-name">${c.name}</div>
+        <div class="ci-row">
+          <div class="ci-qty-ctrl">
+            <button onclick="changeQty('${c.id}',-1)">−</button>
+            <span>${c.qty}</span>
+            <button onclick="changeQty('${c.id}',1)">+</button>
+          </div>
+          <div class="ci-price">₱${c.price * c.qty}</div>
+          <span class="ci-remove" onclick="removeFromCart('${c.id}')">🗑</span>
+        </div>
+      </div>
+    </div>`).join('');
+  const sub = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const del = sub >= 200 ? 0 : 30;
+  document.getElementById('cartSubtotal').textContent = '₱' + sub;
+  document.getElementById('cartTotal').textContent = '₱' + (sub + del);
+  cf.style.display = 'block';
+}
+function changeQty(id, d) {
+  const c = cart.find(x => x.id === id);
+  if (!c) return;
+  c.qty += d;
+  if (c.qty <= 0) cart = cart.filter(x => x.id !== id);
+  updateCartUI();
+}
+function removeFromCart(id) { cart = cart.filter(x => x.id !== id); updateCartUI(); }
+function openCart() { document.getElementById('cartDrawer').classList.add('open'); document.getElementById('cartOverlay').classList.add('open'); }
+function closeCart() { document.getElementById('cartDrawer').classList.remove('open'); document.getElementById('cartOverlay').classList.remove('open'); }
+
+/* CHECKOUT */
+function openCheckout() {
+  if (!cart.length) return;
+  closeCart();
+  checkoutStep = 1;
+  checkoutDraft = {
+    name: currentUser ? currentUser.name || '' : '',
+    phone: currentUser ? currentUser.phone || '' : '',
+    address: currentUser ? currentUser.address || '' : '',
+    notes: '',
+    payment: 'Cash on Delivery'
+  };
+  renderCheckout();
+  document.getElementById('checkoutOverlay').classList.add('open');
+}
+function closeCheckout() { document.getElementById('checkoutOverlay').classList.remove('open'); }
+function proceedCheckoutToPayment() {
+  checkoutDraft.name = document.getElementById('co-name')?.value.trim() || '';
+  checkoutDraft.phone = document.getElementById('co-phone')?.value.trim() || '';
+  checkoutDraft.address = document.getElementById('co-addr')?.value.trim() || '';
+  checkoutDraft.notes = document.getElementById('co-notes')?.value.trim() || '';
+  if (!checkoutDraft.name || !checkoutDraft.phone || !checkoutDraft.address) {
+    showPubToast('Please fill in your name, phone, and address.', 'info');
+    return;
+  }
+  checkoutStep = 2;
+  renderCheckout();
+}
+function proceedCheckoutToReview() {
+  checkoutDraft.payment = document.querySelector('input[name="pay"]:checked')?.value || 'Cash on Delivery';
+  checkoutStep = 3;
+  renderCheckout();
+}
+function renderCheckout() {
+  const sub = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const del = sub >= 200 ? 0 : 30;
+  const total = sub + del;
+  const steps = `<div class="checkout-steps">
+    <div class="cs-step ${checkoutStep >= 1 ? 'active' : ''} ${checkoutStep > 1 ? 'done' : ''}"><div class="cs-num">${checkoutStep > 1 ? '✓' : '1'}</div>Delivery</div>
+    <div class="cs-line ${checkoutStep > 1 ? 'done' : ''}"></div>
+    <div class="cs-step ${checkoutStep >= 2 ? 'active' : ''} ${checkoutStep > 2 ? 'done' : ''}"><div class="cs-num">${checkoutStep > 2 ? '✓' : '2'}</div>Payment</div>
+    <div class="cs-line ${checkoutStep > 2 ? 'done' : ''}"></div>
+    <div class="cs-step ${checkoutStep >= 3 ? 'active' : ''}"><div class="cs-num">3</div>Review</div>
+  </div>`;
+  if (checkoutStep === 1) {
+    document.getElementById('checkoutBody').innerHTML = steps + `
+      <div class="form-grid"><div class="fg"><label>Full Name</label><input id="co-name" type="text" value="${checkoutDraft.name || ''}"/></div>
+      <div class="fg"><label>Phone</label><input id="co-phone" type="tel" value="${checkoutDraft.phone || ''}"/></div></div>
+      <div class="form-grid full"><div class="fg"><label>Delivery Address</label><input id="co-addr" type="text" value="${checkoutDraft.address || ''}"/></div></div>
+      <div class="form-grid full"><div class="fg"><label>Notes (optional)</label><textarea id="co-notes" placeholder="Gate code, landmark…">${checkoutDraft.notes || ''}</textarea></div></div>
+      <div class="checkout-nav"><span></span><button class="next-btn" onclick="proceedCheckoutToPayment()">Continue →</button></div>`;
+  } else if (checkoutStep === 2) {
+    document.getElementById('checkoutBody').innerHTML = steps + `
+      <p style="font-size:14px;font-weight:600;color:var(--g600);margin-bottom:14px;">Select Payment Method</p>
+      <div class="pay-options">
+        <label class="pay-opt"><input type="radio" name="pay" value="Cash on Delivery"${checkoutDraft.payment === 'Cash on Delivery' ? ' checked' : ''}/> 💵 Cash on Delivery</label>
+        <label class="pay-opt"><input type="radio" name="pay" value="GCash"${checkoutDraft.payment === 'GCash' ? ' checked' : ''}/> 📱 GCash</label>
+        <label class="pay-opt"><input type="radio" name="pay" value="Bank Transfer"${checkoutDraft.payment === 'Bank Transfer' ? ' checked' : ''}/> 🏦 Bank Transfer</label>
+      </div>
+      <div class="checkout-nav"><button class="back-btn" onclick="checkoutStep=1;renderCheckout()">← Back</button><button class="next-btn" onclick="proceedCheckoutToReview()">Review Order →</button></div>`;
+  } else if (checkoutStep === 3) {
+    document.getElementById('checkoutBody').innerHTML = steps + `
+      <div class="order-review-item"><div><div class="ori-name">${checkoutDraft.name}</div><div class="ori-detail">${checkoutDraft.phone}</div></div><div class="ori-price">${checkoutDraft.payment}</div></div>
+      <div class="order-review-item"><div><div class="ori-name">Delivery Address</div><div class="ori-detail">${checkoutDraft.address}</div></div><div class="ori-price">${checkoutDraft.notes ? 'With notes' : 'No notes'}</div></div>
+      ${cart.map(c => `<div class="order-review-item"><div><div class="ori-name">${c.name}</div><div class="ori-detail">Qty: ${c.qty}</div></div><div class="ori-price">₱${c.price * c.qty}</div></div>`).join('')}
+      <div class="review-total-row"><span>Total</span><span>₱${total}</span></div>
+      <div class="checkout-nav"><button class="back-btn" onclick="checkoutStep=2;renderCheckout()">← Back</button><button class="next-btn" onclick="placeOrder()">Place Order ✓</button></div>`;
+  }
+}
+function renderCheckout() {
+  const sub = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const del = sub >= 200 ? 0 : 30;
+  const total = sub + del;
+  const steps = `<div class="checkout-steps">
+    <div class="cs-step ${checkoutStep >= 1 ? 'active' : ''} ${checkoutStep > 1 ? 'done' : ''}"><div class="cs-num">${checkoutStep > 1 ? '✓' : '1'}</div>Delivery</div>
+    <div class="cs-line ${checkoutStep > 1 ? 'done' : ''}"></div>
+    <div class="cs-step ${checkoutStep >= 2 ? 'active' : ''} ${checkoutStep > 2 ? 'done' : ''}"><div class="cs-num">${checkoutStep > 2 ? '✓' : '2'}</div>Payment</div>
+    <div class="cs-line ${checkoutStep > 2 ? 'done' : ''}"></div>
+    <div class="cs-step ${checkoutStep >= 3 ? 'active' : ''}"><div class="cs-num">3</div>Review</div>
+  </div>`;
+  if (checkoutStep === 1) {
+    document.getElementById('checkoutBody').innerHTML = steps + `
+      <div class="form-grid"><div class="fg"><label>Full Name</label><input id="co-name" type="text" value="${checkoutDraft.name || ''}"/></div>
+      <div class="fg"><label>Phone</label><input id="co-phone" type="tel" value="${checkoutDraft.phone || ''}"/></div></div>
+      <div class="form-grid full"><div class="fg"><label>Delivery Address</label><input id="co-addr" type="text" value="${checkoutDraft.address || ''}"/></div></div>
+      <div class="form-grid full"><div class="fg"><label>Notes (optional)</label><textarea id="co-notes" placeholder="Gate code, landmark...">${checkoutDraft.notes || ''}</textarea></div></div>
+      <div class="checkout-nav"><span></span><button class="next-btn" onclick="proceedCheckoutToPayment()">Continue -></button></div>`;
+    return;
+  }
+  if (checkoutStep === 2) {
+    document.getElementById('checkoutBody').innerHTML = steps + `
+      <p style="font-size:14px;font-weight:600;color:var(--g600);margin-bottom:14px;">Select Payment Method</p>
+      <div class="pay-options">
+        <label class="pay-opt"><input type="radio" name="pay" value="Cash on Delivery"${checkoutDraft.payment === 'Cash on Delivery' ? ' checked' : ''}/> Cash on Delivery</label>
+        <label class="pay-opt"><input type="radio" name="pay" value="GCash"${checkoutDraft.payment === 'GCash' ? ' checked' : ''}/> GCash</label>
+        <label class="pay-opt"><input type="radio" name="pay" value="Bank Transfer"${checkoutDraft.payment === 'Bank Transfer' ? ' checked' : ''}/> Bank Transfer</label>
+      </div>
+      <div class="checkout-nav"><button class="back-btn" onclick="checkoutStep=1;renderCheckout()"><- Back</button><button class="next-btn" onclick="proceedCheckoutToReview()">Review Order -></button></div>`;
+    return;
+  }
+  document.getElementById('checkoutBody').innerHTML = steps + `
+    <div class="order-review-item"><div><div class="ori-name">${checkoutDraft.name}</div><div class="ori-detail">${checkoutDraft.phone}</div></div><div class="ori-price">${checkoutDraft.payment}</div></div>
+    <div class="order-review-item"><div><div class="ori-name">Delivery Address</div><div class="ori-detail">${checkoutDraft.address}</div></div><div class="ori-price">${checkoutDraft.notes ? 'With notes' : 'No notes'}</div></div>
+    ${cart.map(c => `<div class="order-review-item"><div><div class="ori-name">${c.name}</div><div class="ori-detail">Qty: ${c.qty}</div></div><div class="ori-price">P${c.price * c.qty}</div></div>`).join('')}
+    <div class="review-total-row"><span>Total</span><span>P${total}</span></div>
+    <div class="checkout-nav"><button class="back-btn" onclick="checkoutStep=2;renderCheckout()"><- Back</button><button class="next-btn" onclick="placeOrder()">Place Order</button></div>`;
+}
+function nextPublicOrderId() {
+  const maxId = orders.reduce((max, order) => {
+    const num = parseInt(String(order.id || '').replace(/\D/g, ''), 10);
+    return Number.isFinite(num) ? Math.max(max, num) : max;
+  }, 2045);
+  return 'WM-' + String(maxId + 1);
+}
+function upsertCustomerRecord(customerData) {
+  const normalized = normalizeCustomerRecord(customerData);
+  const existingIndex = customers.findIndex(c =>
+    c.id === normalized.id ||
+    (!!normalized.email && c.email === normalized.email) ||
+    (!!normalized.phone && c.phone === normalized.phone)
+  );
+  if (existingIndex >= 0) {
+    customers[existingIndex] = {
+      ...customers[existingIndex],
+      ...normalized,
+      password: normalized.password || customers[existingIndex].password || ''
+    };
+    return customers[existingIndex];
+  }
+  customers.push(normalized);
+  return normalized;
+}
+async function createPublicOrders(customer, checkoutData) {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'});
+  const payment = checkoutData.payment || 'Cash on Delivery';
+  const notes = checkoutData.notes || '';
+  const created = cart.map(item => {
+    const newOrder = {
+      id: nextPublicOrderId(),
+      custId: customer.id,
+      name: customer.name,
+      phone: customer.phone || '',
+      address: customer.address || '',
+      productId: item.id,
+      qty: item.qty,
+      payment,
+      payStatus: 'Unpaid',
+      receivedBy: 'Website',
+      notes,
+      status: 'pending',
+      time: timeStr,
+      date: todayStr()
+    };
+    orders.unshift(newOrder);
+    return newOrder;
+  });
+  customer.totalOrders = (parseInt(customer.totalOrders, 10) || 0) + created.length;
+  customer.totalSpent = (parseFloat(customer.totalSpent) || 0) + created.reduce((sum, order) => sum + orderTotal(order), 0);
+  customer.lastOrder = todayStr();
+  saveOrdersLocal();
+  await syncCustomerToSheet(customer);
+  refreshCustomerViews();
+  return created;
+}
+function placeOrder() {
+  const name = checkoutDraft.name || currentUser?.name || '';
+  const phone = checkoutDraft.phone || currentUser?.phone || '';
+  const address = checkoutDraft.address || currentUser?.address || '';
+  const notes = checkoutDraft.notes || '';
+  const payment = checkoutDraft.payment || 'Cash on Delivery';
+  if (!name || !phone || !address) {
+    showPubToast('Please complete your delivery details first.', 'info');
+    checkoutStep = 1;
+    renderCheckout();
+    return;
+  }
+  const existingCustomer = customers.find(c =>
+    (!!currentUser?.id && c.id === currentUser.id) ||
+    (!!currentUser?.email && c.email === currentUser.email) ||
+    (!!phone && c.phone === phone)
+  );
+  const customer = upsertCustomerRecord({
+    id: existingCustomer?.id || currentUser?.id || nextCustomerId(),
+    name,
+    email: currentUser?.email || existingCustomer?.email || '',
+    phone,
+    address,
+    password: currentUser?.password || existingCustomer?.password || '',
+    since: existingCustomer?.since || currentUser?.since || new Date().toISOString().slice(0, 7),
+    totalOrders: existingCustomer?.totalOrders || 0,
+    totalSpent: existingCustomer?.totalSpent || 0,
+    lastOrder: existingCustomer?.lastOrder || '—',
+    notes: existingCustomer?.notes || '',
+    rewarded: !!existingCustomer?.rewarded
+  });
+  currentUser = {
+    ...customer,
+    orders: currentUser?.orders || []
+  };
+  const cartSnapshot = [...cart];
+  createPublicOrders(customer, {payment, notes}).then(createdOrders => {
+    currentUser.orders = currentUser.orders || [];
+    createdOrders.forEach(order => {
+      const product = pubProducts.find(p => p.id === order.productId) || products.find(p => p.id === order.productId);
+      currentUser.orders.unshift({
+        id: order.id,
+        items: `${order.qty}× ${product ? product.name : order.productId}`,
+        status: order.status,
+        total: orderTotal(order)
+      });
+    });
+    safeSet('wm_current_user', JSON.stringify(currentUser));
+    persistAppState();
+    cart = [];
+    updateCartUI();
+    const firstOrderId = createdOrders[0]?.id || nextPublicOrderId();
+    document.getElementById('checkoutBody').innerHTML = `<div class="checkout-success"><div class="cs-icon">✅</div><div class="cs-title">Order Placed!</div><div class="cs-msg">We'll confirm your order within 30 minutes.</div><div class="cs-order-id">${firstOrderId}</div><button class="btn-primary" style="margin:0 auto;" onclick="closeCheckout()">Continue Shopping</button></div>`;
+    showPubToast('🎉 ' + createdOrders.length + ' order' + (createdOrders.length > 1 ? 's' : '') + ' placed and saved!', 'success');
+  }).catch(() => {
+    cart = cartSnapshot;
+    updateCartUI();
+    showPubToast('Order could not be saved. Please try again.', 'info');
+  });
+}
+
+/* ACCOUNT MODAL */
+function openAccount() { renderAcctModal(); document.getElementById('acctOverlay').classList.add('open'); }
+function closeAccount() { document.getElementById('acctOverlay').classList.remove('open'); }
+function switchAcctTab(tab) {
+  document.querySelectorAll('.acct-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.acct-form').forEach(f => f.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.getElementById('form-' + tab).classList.add('active');
+}
+function renderAcctModal() {
+  const el = document.getElementById('acctContent');
+  if (currentUser) {
+    const orders = currentUser.orders || [];
+    el.innerHTML = `<div class="profile-head"><div class="profile-avatar">${currentUser.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div><div><div class="profile-name">${currentUser.name}</div><div class="profile-email">${currentUser.email || ''}</div></div></div>
+      <div class="profile-orders"><div class="po-head">Recent Orders</div>
+        ${orders.length ? orders.slice(0,5).map(o=>`<div class="po-item"><span class="po-id">${o.id}</span><span>${o.items}</span><span class="po-status ${o.status}">₱${o.total}</span></div>`).join('') : '<div class="po-item" style="color:var(--g400);">No orders yet.</div>'}
+      </div>
+      <div class="loyalty-bar"><div class="lb-title">Loyalty Points</div><div class="lb-bar"><div class="lb-fill" style="width:${Math.min((orders.length/10)*100,100)}%"></div></div><div class="lb-labels"><span>${orders.length} orders</span><span>10 for reward</span></div></div>
+      <div style="display:flex;gap:10px;margin-top:18px;">
+        <button class="auth-btn" style="flex:1;" onclick="closeAccount();document.getElementById('shop').scrollIntoView({behavior:'smooth'})">Order Now →</button>
+        <button class="btn-outline" style="font-size:13px;padding:10px 18px;" onclick="doPubLogout()">Sign Out</button>
+      </div>`;
+    return;
+  }
+  el.innerHTML = `<div class="acct-tabs">
+    <div class="acct-tab active" id="tab-login" onclick="switchAcctTab('login')">Sign In</div>
+    <div class="acct-tab" id="tab-register" onclick="switchAcctTab('register')">Register</div>
+  </div>
+  <div class="acct-form active" id="form-login">
+    <div class="auth-field"><div class="auth-label">Username or Email</div><input class="auth-input" id="loginEmail" type="text" placeholder="admin  or  your@email.com"/></div>
+    <div class="auth-field"><div class="auth-label">Password</div><input class="auth-input" id="loginPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doSignIn()"/></div>
+    <div class="auth-err" id="loginErr">Invalid credentials. Please try again.</div>
+    <button class="auth-btn" onclick="doSignIn()">Sign In →</button>
+    <div style="margin-top:12px;font-size:12px;color:var(--g400);text-align:center;">Admin? Use your admin username & password.</div>
+  </div>
+  <div class="acct-form" id="form-register">
+    <div class="auth-field"><div class="auth-label">Full Name *</div><input class="auth-input" id="regName" type="text" placeholder="Your full name"/></div>
+    <div class="auth-field"><div class="auth-label">Email *</div><input class="auth-input" id="regEmail" type="email" placeholder="your@email.com"/></div>
+    <div class="auth-field"><div class="auth-label">Phone</div><input class="auth-input" id="regPhone" type="tel" placeholder="09XX-XXX-XXXX"/></div>
+    <div class="auth-field"><div class="auth-label">Password *</div><input class="auth-input" id="regPass" type="password" placeholder="Choose a password"/></div>
+    <div class="auth-err" id="regErr">Please fill all required fields.</div>
+    <div class="auth-ok" id="regOk">Account created! Welcome 🎉</div>
+    <button class="auth-btn" onclick="doRegister()">Create Account →</button>
+    <div style="margin-top:10px;font-size:12px;color:var(--g400);text-align:center;">Your data is stored securely in our database.</div>
+  </div>`;
+}
+
+/* SIGN IN */
+function doSignIn() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const errEl = document.getElementById('loginErr');
+  // Check admin
+  if ((email === ADMIN_CREDS.user || email.toLowerCase() === 'admin') && pass === ADMIN_CREDS.pass) {
+    activateAdminMode();
+    showPubToast('Welcome, Admin! Redirecting to dashboard…', 'info');
+    return;
+  }
+  // Check registered customers (localStorage)
+  const stored = safeReadJson('wm_customers', []);
+  const found = stored.find(c => (c.email === email || c.phone === email) && c.password === pass);
+  if (found) {
+    currentUser = { ...found, orders: [] };
+    safeSet('wm_current_user', JSON.stringify(currentUser));
+    persistAppState();
+    updateNavAccount();
+    renderAcctModal();
+    showPubToast('Welcome back, ' + found.name.split(' ')[0] + '! 👋', 'success');
+    return;
+  }
+  errEl.style.display = 'block';
+  setTimeout(() => errEl.style.display = 'none', 3000);
+}
+
+/* REGISTER */
+async function doRegister() {
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const pass = document.getElementById('regPass').value;
+  const errEl = document.getElementById('regErr');
+  const okEl = document.getElementById('regOk');
+  if (!name || !email || !pass) { errEl.style.display = 'block'; setTimeout(() => errEl.style.display = 'none', 3000); return; }
+
+  const newCust = {
+    id: 'C' + Date.now(),
+    name, email, phone, address: '',
+    password: pass,
+    since: new Date().toISOString().slice(0, 7),
+    totalOrders: 0, totalSpent: 0, lastOrder: '—',
+    notes: '', rewarded: false
+  };
+  const savedCustomer = upsertCustomerRecord(newCust);
+  await saveCustomerToSheet(savedCustomer);
+  refreshCustomerViews();
+
+  // Auto-login
+  currentUser = { ...savedCustomer, orders: [] };
+  safeSet('wm_current_user', JSON.stringify(currentUser));
+  persistAppState();
+  updateNavAccount();
+  okEl.style.display = 'block';
+  setTimeout(() => { okEl.style.display = 'none'; closeAccount(); showPubToast('Welcome to WaterMed, ' + name.split(' ')[0] + '! 🎉', 'success'); }, 1500);
+}
+
+function doPubLogout() { currentUser = null; safeRemove('wm_current_user'); persistAppState(); updateNavAccount(); closeAccount(); showPubToast('Signed out successfully'); }
+function updateNavAccount() {
+  const avatar = document.getElementById('acctAvatar');
+  const label = document.getElementById('acctLabel');
+  if (!avatar || !label) return;
+  if (currentUser) {
+    avatar.textContent = currentUser.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    avatar.style.fontSize = '10px';
+    label.textContent = currentUser.name.split(' ')[0];
+  } else {
+    avatar.textContent = '👤';
+    avatar.style.fontSize = '';
+    label.textContent = 'Sign In';
+  }
+}
+
+/* TRACKING */
+const MOCK_ORDERS = {
+  'WM-2041':{name:'Maria Santos',status:'shipped',product:'3× Mineral Water 5-Gallon',total:135,time:'10:15 AM'},
+  'WM-1999':{name:'Juan dela Cruz',status:'delivered',product:'2× Alkaline Water 5-Gallon',total:120,time:'9:00 AM'},
+  'WM-2042':{name:'Pedro Reyes',status:'pending',product:'5× Purified Water 5-Gallon',total:180,time:'11:30 AM'},
+};
+const STATUS_STEPS = {pending:0,processing:1,shipped:2,delivered:3};
+function trackOrder() {
+  const id = document.getElementById('trackInput').value.trim().toUpperCase();
+  const el = document.getElementById('trackResult');
+  let o = null;
+  if (currentUser) o = (currentUser.orders||[]).find(x => x.id === id);
+  if (o) { renderTrackResult(el, id, {name: currentUser.name, status: o.status, product: o.items, total: o.total}); return; }
+  const m = MOCK_ORDERS[id];
+  if (m) renderTrackResult(el, id, m);
+  else { el.innerHTML = `<div style="text-align:center;padding:32px;background:#fff;border-radius:var(--rlg);border:1px solid var(--g100);"><div style="font-size:40px;margin-bottom:12px;">🔍</div><div style="font-weight:600;">Order not found</div></div>`; el.classList.add('show'); }
+}
+function renderTrackResult(el, id, o) {
+  const steps = ['Pending','Processing','Shipped','Delivered'];
+  const icons = {pending:'⏳',processing:'🔄',shipped:'🚚',delivered:'✅'};
+  const curIdx = STATUS_STEPS[o.status] || 0;
+  el.innerHTML = `<div class="track-card">
+    <div class="track-hdr"><div><div class="track-id">ORDER ID</div><div class="track-name">${id} · ${o.name}</div></div><div class="track-status-badge">${o.status.charAt(0).toUpperCase()+o.status.slice(1)}</div></div>
+    <div class="track-body"><div class="timeline">${steps.map((s,i)=>{const cls=i<curIdx?'done':i===curIdx?'active':'pending';return`<div class="te"><div class="te-dot ${cls}">${icons[s.toLowerCase()]||'○'}</div><div><div class="te-name">${s}</div><div class="te-time">${i<=curIdx?'Confirmed':'Awaiting'}</div></div></div>`;}).join('')}</div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--g100);font-size:13px;color:var(--g600);"><strong>Product:</strong> ${o.product}<br/><strong>Total:</strong> ₱${Number(o.total).toLocaleString()}</div></div>
+  </div>`;
+  el.classList.add('show');
+}
+
+/* FAQ */
+const FAQS = [
+  {q:'How long does delivery take?',a:"All deliveries are completed within 2–3 hours after order confirmation. We'll contact you within 30 minutes."},
+  {q:'What are your delivery hours?',a:'Monday–Saturday: 7:00 AM – 8:00 PM. Sunday: 8:00 AM – 5:00 PM.'},
+  {q:'Do I need to return the empty container?',a:'Yes! Keep your empty jug — our rider will collect it on the next delivery. A ₱150 deposit applies for first-time purchases.'},
+  {q:'Is your water safe to drink directly?',a:'Absolutely. All products pass our 7-stage purification and are DOH-certified. We do monthly quality audits.'},
+  {q:'What payment methods are accepted?',a:'Cash on Delivery, GCash, and Bank Transfer. COD is available for all delivery zones.'},
+  {q:'Is there a minimum order?',a:'No minimum! You can order even a single bottle. Delivery is ₱30, free for orders ₱200 and above.'},
+];
+document.getElementById('faqList').innerHTML = FAQS.map(f => `
+  <div class="faq-item">
+    <button class="faq-q" onclick="toggleFAQ(this)">${f.q}<div class="faq-icon">+</div></button>
+    <div class="faq-a">${f.a}</div>
+  </div>`).join('');
+function toggleFAQ(btn) {
+  const isOpen = btn.classList.contains('open');
+  document.querySelectorAll('.faq-q').forEach(b => b.classList.remove('open'));
+  document.querySelectorAll('.faq-a').forEach(a => a.classList.remove('open'));
+  if (!isOpen) { btn.classList.add('open'); btn.nextElementSibling.classList.add('open'); }
+}
+
+/* MISC */
+window.addEventListener('scroll', () => document.getElementById('navbar').classList.toggle('shadow', window.scrollY > 10));
+function toggleMobileNav() { document.getElementById('mobileNav').classList.toggle('open'); }
+function showPubToast(msg, type = '') {
+  const t = document.getElementById('pubToast');
+  t.textContent = msg; t.className = 'show ' + (type === 'success' ? 'success' : type === 'info' ? 'info' : '');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+
+/* ═══════════════════════════════════════════
+   ADMIN JS
+═══════════════════════════════════════════ */
+const STATUS_LABELS = {pending:'Pending',processing:'Processing',shipped:'Shipped',delivered:'Delivered',cancelled:'Cancelled'};
+const STATUS_ORDER_LIST = ['pending','processing','shipped','delivered'];
+const STATUS_PROGRESS = {pending:10,processing:38,shipped:68,delivered:100,cancelled:0};
+
+let products = [
+  {id:'P001',name:'Purified Water 5-Gallon',price:30,category:'Purified Water',desc:'7-stage purified drinking water in 5-gallon jug.',emoji:'💧',imgUrl:''},
+  {id:'P002',name:'Mineral Water 5-Gallon',price:35,category:'Mineral Water',desc:'Natural mineral water enriched with essential minerals.',emoji:'🌊',imgUrl:''},
+  {id:'P003',name:'Alkaline Water 5-Gallon',price:45,category:'Alkaline Water',desc:'pH 8.5+ alkaline water for optimal hydration.',emoji:'⚡',imgUrl:''},
+  {id:'P004',name:'Purified Water 1.5L',price:15,category:'Purified Water',desc:'Convenient 1.5L bottle of purified water.',emoji:'🍶',imgUrl:''},
+  {id:'P005',name:'Mineral Water 500ml',price:10,category:'Mineral Water',desc:'500ml mineral water bottle, ideal for on-the-go.',emoji:'🥤',imgUrl:''},
+];
+
+let customers = [
+  {id:'C001',name:'Maria Santos',phone:'0912-345-6789',email:'',address:'123 Quezon St., QC',since:'2023-01',totalOrders:48,totalSpent:2400,lastOrder:'2025-04-15',notes:'Prefers mineral water',rewarded:false},
+  {id:'C002',name:'Juan dela Cruz',phone:'0918-222-3333',email:'',address:'45 Rizal Ave., Caloocan',since:'2022-08',totalOrders:82,totalSpent:5100,lastOrder:'2025-04-16',notes:'',rewarded:true},
+  {id:'C003',name:'Pedro Reyes',phone:'0999-111-2222',email:'',address:'67 Magsaysay Blvd., Marikina',since:'2024-03',totalOrders:12,totalSpent:600,lastOrder:'2025-04-14',notes:'Gate code: 1234',rewarded:false},
+  {id:'C004',name:'Ana Bautista',phone:'0917-888-7766',email:'',address:'89 Sampaguita St., San Juan',since:'2023-05',totalOrders:35,totalSpent:1800,lastOrder:'2025-04-16',notes:'',rewarded:false},
+  {id:'C005',name:'Rodel Mendoza',phone:'0921-444-5566',email:'',address:'12 Mabini St., Marikina',since:'2022-01',totalOrders:110,totalSpent:7200,lastOrder:'2025-04-15',notes:'Alkaline only',rewarded:true},
+  {id:'C006',name:'Lita Garcia',phone:'0905-777-8899',email:'',address:'34 Bonifacio St., QC',since:'2023-11',totalOrders:21,totalSpent:1050,lastOrder:'2025-04-13',notes:'',rewarded:false},
+];
+
+let orders = [
+  {id:'WM-2041',custId:'C001',name:'Maria Santos',phone:'0912-345-6789',address:'123 Quezon St., QC',productId:'P002',qty:3,payment:'Cash on Delivery',payStatus:'Unpaid',receivedBy:'Aling Rosa',notes:'',status:'shipped',time:'10:15 AM',date:todayStr()},
+  {id:'WM-1999',custId:'C002',name:'Juan dela Cruz',phone:'0918-222-3333',address:'45 Rizal Ave., Caloocan',productId:'P003',qty:2,payment:'GCash',payStatus:'Paid',receivedBy:'Kuya Ben',notes:'',status:'delivered',time:'9:00 AM',date:todayStr()},
+  {id:'WM-2042',custId:'C003',name:'Pedro Reyes',phone:'0999-111-2222',address:'67 Magsaysay Blvd., Marikina',productId:'P001',qty:5,payment:'Cash on Delivery',payStatus:'Unpaid',receivedBy:'Aling Rosa',notes:'Gate code: 1234',status:'pending',time:'11:30 AM',date:todayStr()},
+  {id:'WM-2043',custId:'C004',name:'Ana Bautista',phone:'0917-888-7766',address:'89 Sampaguita St., San Juan',productId:'P004',qty:10,payment:'GCash',payStatus:'Paid',receivedBy:'Kuya Ben',notes:'',status:'processing',time:'12:00 PM',date:todayStr()},
+];
+
+let activeFilter = 'all', activeOrderId = null, activeCustId = null;
+let pendingDeleteType = null, pendingDeleteId = null;
+let admClockInterval = null;
+
+function persistAppState() {
+  safeSet('wm_sheet_url', SHEET_URL);
+  safeSet('wm_sheet_link', SHEET_LINK);
+  safeSet('wm_admin_session', ADMIN_SESSION ? 'true' : 'false');
+  safeSet('wm_admin_creds', JSON.stringify(ADMIN_CREDS));
+  safeSet('wm_branding', JSON.stringify(BRANDING));
+  safeSet('wm_customers', JSON.stringify(customers));
+  safeSet('wm_orders', JSON.stringify(orders));
+  safeSet('wm_deleted_customers', JSON.stringify(getDeletedCustomerIds ? getDeletedCustomerIds() : []));
+  if (typeof currentUser !== 'undefined' && currentUser) safeSet('wm_current_user', JSON.stringify(currentUser));
+}
+function saveOrdersLocal() {
+  safeSet('wm_orders', JSON.stringify(orders));
+}
+function loadOrdersFromLocal() {
+  if (!safeHas('wm_orders')) return;
+  const stored = safeReadJson('wm_orders', []);
+  if (Array.isArray(stored)) orders = stored;
+}
+function loadPersistedState() {
+  SHEET_URL = safeGet('wm_sheet_url', SHEET_URL);
+  SHEET_LINK = safeGet('wm_sheet_link', SHEET_LINK);
+  ADMIN_SESSION = safeGet('wm_admin_session', ADMIN_SESSION ? 'true' : 'false') === 'true';
+  ADMIN_CREDS = safeReadJson('wm_admin_creds', ADMIN_CREDS);
+  BRANDING = safeReadJson('wm_branding', BRANDING);
+  const storedCustomers = safeReadJson('wm_customers', []);
+  if (storedCustomers.length) customers = storedCustomers.map(normalizeCustomerRecord);
+  loadOrdersFromLocal();
+}
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function orderTotal(o) { const p = products.find(x => x.id === o.productId); return p ? (o.qty * p.price + 30) : 30; }
+function getAvatarColor(name) { const c=['#2F81F7','#3FB950','#F0B429','#F85149','#BC8CFF','#1BB8A0']; let h=0; for(let ch of name)h=(h*31+ch.charCodeAt(0))%c.length; return c[h]; }
+function initials(name) { return name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
+function getTier(c) { if(c.totalOrders>=50)return{label:'Gold',cls:'tier-gold'}; if(c.totalOrders>=20)return{label:'Silver',cls:'tier-silver'}; return{label:'Bronze',cls:'tier-bronze'}; }
+function custOrderCount(custId) { return orders.filter(o=>o.custId===custId).length; }
+
+/* CLOCK */
+function updateClock() { const el=document.getElementById('clock'); if(el)el.textContent=new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+
+/* NAV */
+function showAdmPanel(name, el) {
+  document.querySelectorAll('.adm-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  const panel = document.getElementById('adm-panel-' + name);
+  if (panel) panel.classList.add('active');
+  if (el) el.classList.add('active');
+  const titles = {dashboard:'Dashboard',orders:'All Orders',products:'Products',customers:'Customers',rewards:'Loyalty & Rewards',addorder:'Add New Order',branding:'Site Settings',editor:'Whole Page Editor'};
+  const tb = document.getElementById('topbarTitle');
+  if (tb) tb.textContent = titles[name] || name;
+  if (name === 'orders') renderOrders();
+  if (name === 'customers') renderCustomers();
+  if (name === 'rewards') renderRewards();
+  if (name === 'products') renderAdmProducts();
+  if (name === 'dashboard') renderDashboard();
+  if (name === 'addorder') populateProductDropdown();
+  if (name === 'branding') { loadAboutSettings(); document.getElementById('sheet-url-input').value = SHEET_URL; document.getElementById('sheet-link-input').value = SHEET_LINK; }
+  if (name === 'editor') loadPublicPageEditor();
+}
+
+/* STATS */
+function updateStats() {
+  const tod = orders.filter(o => o.date === todayStr());
+  const active = orders.filter(o => ['pending','processing'].includes(o.status));
+  const rev = orders.filter(o => o.status === 'delivered' && o.date === todayStr()).reduce((s,o) => s + orderTotal(o), 0);
+  const set = (id,v) => { const el=document.getElementById(id); if(el)el.textContent=v; };
+  set('stat-today', tod.length);
+  set('stat-active', active.length);
+  set('stat-revenue', '₱' + rev.toLocaleString());
+  set('stat-customers', customers.length);
+  set('pendingCount', orders.filter(o => o.status === 'pending').length);
+}
+
+/* ORDER ROW */
+function orderRow(o) {
+  const custOrders = custOrderCount(o.custId);
+  const paidCls = o.payStatus === 'Paid' ? 'pay-paid' : 'pay-unpaid';
+  return `<tr>
+    <td><span class="order-id" onclick="openOrderModal('${o.id}')" style="cursor:pointer;">${o.id}</span></td>
+    <td><div class="cust-name">${o.name}</div><div class="cust-contact">${o.phone}</div></td>
+    <td style="text-align:center;font-family:var(--font-m);color:var(--blue);">${custOrders}</td>
+    <td><select class="tbl-select" onchange="updateOrderStatus('${o.id}',this.value)">${['pending','processing','shipped','delivered','cancelled'].map(s=>`<option value="${s}"${o.status===s?' selected':''}>${STATUS_LABELS[s]}</option>`).join('')}</select></td>
+    <td><span class="pay-badge ${paidCls}">${o.payStatus}</span></td>
+    <td style="font-size:12px;color:var(--muted);">${o.payment}</td>
+    <td style="font-size:12px;color:var(--muted);">${o.receivedBy||'—'}</td>
+    <td><div style="display:flex;gap:4px;">
+      <button class="act-btn blue" onclick="openOrderModal('${o.id}')">View</button>
+      <button class="act-btn red" onclick="promptDelete('order','${o.id}')">✕</button>
+    </div></td>
+  </tr>`;
+}
+function dashboardOrderRow(o) {
+  const custOrders = custOrderCount(o.custId);
+  const paidCls = o.payStatus === 'Paid' ? 'pay-paid' : 'pay-unpaid';
+  return `<tr>
+    <td><span class="order-id" onclick="openOrderModal('${o.id}')" style="cursor:pointer;">${o.id}</span></td>
+    <td><div class="cust-name">${o.name}</div><div class="cust-contact">${o.phone}</div></td>
+    <td style="text-align:center;font-family:var(--font-m);color:var(--blue);">${custOrders}</td>
+    <td><span class="status-badge s-${o.status}">${STATUS_LABELS[o.status]}</span></td>
+    <td><span class="pay-badge ${paidCls}">${o.payStatus}</span></td>
+    <td style="font-size:12px;color:var(--muted);">${o.payment}</td>
+    <td style="font-size:12px;color:var(--muted);">${o.receivedBy||'—'}</td>
+    <td><div style="display:flex;gap:4px;">
+      <button class="act-btn blue" onclick="openOrderModal('${o.id}')">View</button>
+      <button class="act-btn red" onclick="deleteRecentOrder('${o.id}')">✕</button>
+    </div></td>
+  </tr>`;
+}
+function deleteRecentOrder(orderId) {
+  const exists = orders.find(o => o.id === orderId);
+  if (!exists) {
+    showAdminToast('Order not found', 'warn');
+    return;
+  }
+  pendingDeleteType = 'order';
+  pendingDeleteId = orderId;
+  const dm = document.getElementById('delete-msg');
+  if (dm) dm.textContent = `Delete order ${orderId}? This cannot be undone.`;
+  document.getElementById('deleteModal').classList.add('open');
+}
+
+/* DASHBOARD */
+function renderDashboard() {
+  const db = document.getElementById('dashOrdersBody');
+  if (db) db.innerHTML = orders.length
+    ? orders.slice(0, 8).map(o => dashboardOrderRow(o)).join('')
+    : `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No recent orders</div></div></td></tr>`;
+  const dtc = document.getElementById('dashTopCustomers');
+  if (dtc) {
+    const top = [...customers].sort((a,b) => b.totalOrders - a.totalOrders).slice(0, 4);
+    dtc.innerHTML = top.map(c => custCard(c)).join('');
+  }
+}
+
+/* ORDERS */
+function setFilter(f) {
+  activeFilter = f;
+  ['all','pending','processing','shipped','delivered'].forEach(x => {
+    const el = document.getElementById('f' + x.charAt(0).toUpperCase() + x.slice(1));
+    if (el) el.classList.toggle('active', x === f);
+  });
+  renderOrders();
+}
+function renderOrders() {
+  const q = (document.getElementById('orderSearch')?.value || '').toLowerCase();
+  let list = orders;
+  if (activeFilter !== 'all') list = list.filter(o => o.status === activeFilter);
+  if (q) list = list.filter(o => o.name.toLowerCase().includes(q) || o.id.toLowerCase().includes(q) || o.phone.includes(q));
+  const body = document.getElementById('allOrdersBody');
+  if (body) body.innerHTML = list.length ? list.map(o => orderRow(o)).join('') : `<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No orders found</div></div></td></tr>`;
+}
+function updateOrderStatus(orderId, newStatus) {
+  const o = orders.find(x => x.id === orderId);
+  if (o) {
+    o.status = newStatus;
+    saveOrdersLocal();
+    persistAppState();
+    updateStats();
+    renderDashboard();
+    renderOrders();
+    showAdminToast('✓ ' + orderId + ' → ' + STATUS_LABELS[newStatus], 'success');
+  }
+}
+function openOrderModal(id) {
+  const o = orders.find(x => x.id === id);
+  if (!o) return;
+  activeOrderId = id;
+  const p = products.find(x => x.id === o.productId);
+  const prog = STATUS_PROGRESS[o.status] || 0;
+  const steps = ['Pending','Processing','Shipped','Delivered'];
+  const curIdx = STATUS_ORDER_LIST.indexOf(o.status);
+  document.getElementById('om-title').textContent = 'Order ' + id;
+  document.getElementById('om-id').textContent = o.date + ' at ' + o.time;
+  document.getElementById('om-body').innerHTML = `
+    <div class="progress-bar"><div class="progress-fill" style="width:${prog}%"></div></div>
+    <div class="progress-steps">${steps.map((s,i)=>`<span class="${i<curIdx?'done':i===curIdx?'active':''}">${s}</span>`).join('')}</div>
+    <div class="od-row"><span class="od-label">Customer</span><span class="od-val">${o.name} · ${o.phone}</span></div>
+    <div class="od-row"><span class="od-label">Address</span><span class="od-val">${o.address}</span></div>
+    <div class="od-row"><span class="od-label">Product</span><span class="od-val">${p ? p.name : o.productId}</span></div>
+    <div class="od-row"><span class="od-label">Quantity</span><span class="od-val">${o.qty} pcs</span></div>
+    <div class="od-row"><span class="od-label">Total</span><span class="od-val" style="color:var(--amber);">₱${orderTotal(o).toLocaleString()}</span></div>
+    <div class="od-row"><span class="od-label">Payment</span><span class="od-val">${o.payment} — ${o.payStatus}</span></div>
+    <div class="od-row"><span class="od-label">Received By</span><span class="od-val">${o.receivedBy||'—'}</span></div>
+    ${o.notes ? `<div class="od-row"><span class="od-label">Notes</span><span class="od-val">${o.notes}</span></div>` : ''}`;
+  const advBtn = document.getElementById('om-advance');
+  if (curIdx < STATUS_ORDER_LIST.length - 1) { advBtn.style.display = 'block'; advBtn.textContent = 'Advance to ' + STATUS_LABELS[STATUS_ORDER_LIST[curIdx + 1]] + ' →'; }
+  else advBtn.style.display = 'none';
+  document.getElementById('orderModal').classList.add('open');
+}
+function advanceFromModal() {
+  const o = orders.find(x => x.id === activeOrderId);
+  if (!o) return;
+  const idx = STATUS_ORDER_LIST.indexOf(o.status);
+  if (idx < STATUS_ORDER_LIST.length - 1) { o.status = STATUS_ORDER_LIST[idx + 1]; updateStats(); renderOrders(); renderDashboard(); openOrderModal(activeOrderId); showAdminToast('✓ Status updated', 'success'); }
+}
+
+/* PRODUCTS */
+function renderAdmProducts() {
+  const grid = document.getElementById('admProductsGrid');
+  if (!grid) return;
+  grid.innerHTML = products.map(p => `
+    <div class="adm-product-card">
+      <div class="adm-pc-img">${p.imgUrl ? `<img src="${p.imgUrl}" style="width:100%;height:100%;object-fit:cover;"/>` : p.emoji}</div>
+      <div class="adm-pc-body">
+        <div class="adm-pc-name">${p.name}</div>
+        <div class="adm-pc-price">₱${p.price}</div>
+        <div class="adm-pc-desc">${p.desc}</div>
+        <div class="adm-pc-actions">
+          <button class="act-btn blue" onclick="openProductModal('${p.id}')">Edit</button>
+          <button class="act-btn red" onclick="promptDelete('product','${p.id}')">Delete</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function openProductModal(id) {
+  const editIdEl = document.getElementById('pm-edit-id');
+  if (id) {
+    const p = products.find(x => x.id === id);
+    if (!p) return;
+    editIdEl.value = id;
+    document.getElementById('pm-title').textContent = 'Edit Product';
+    document.getElementById('pm-name').value = p.name;
+    document.getElementById('pm-price').value = p.price;
+    document.getElementById('pm-cat').value = p.category;
+    document.getElementById('pm-desc').value = p.desc;
+    document.getElementById('pm-img').value = p.imgUrl || '';
+    document.getElementById('pm-emoji').value = p.emoji || '💧';
+  } else {
+    editIdEl.value = '';
+    document.getElementById('pm-title').textContent = 'Add Product';
+    ['pm-name','pm-price','pm-img','pm-desc'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('pm-emoji').value = '💧';
+  }
+  document.getElementById('productModal').classList.add('open');
+}
+function saveProduct() {
+  const name = document.getElementById('pm-name').value.trim();
+  const price = parseFloat(document.getElementById('pm-price').value);
+  const cat = document.getElementById('pm-cat').value;
+  const desc = document.getElementById('pm-desc').value.trim();
+  const img = document.getElementById('pm-img').value.trim();
+  const emoji = document.getElementById('pm-emoji').value.trim() || '💧';
+  const editId = document.getElementById('pm-edit-id').value;
+  if (!name || !price) { showAdminToast('⚠ Name and price are required', ''); return; }
+  if (editId) {
+    const p = products.find(x => x.id === editId);
+    if (p) Object.assign(p, {name, price, category:cat, desc, imgUrl:img, emoji});
+    showAdminToast('✓ Product updated', 'success');
+  } else {
+    const newId = 'P' + String(products.length + 1).padStart(3, '0');
+    products.push({id:newId, name, price, category:cat, desc, imgUrl:img, emoji});
+    showAdminToast('✓ Product added', 'success');
+  }
+  document.getElementById('productModal').classList.remove('open');
+  renderAdmProducts(); populateProductDropdown();
+}
+function populateProductDropdown() {
+  const sel = document.getElementById('ao-product');
+  if (sel) sel.innerHTML = '<option value="">-- Select Product --</option>' + products.map(p => `<option value="${p.id}">₱${p.price} · ${p.name}</option>`).join('');
+}
+
+/* CUSTOMERS */
+function saveCustomersLocal() {
+  safeSet('wm_customers', JSON.stringify(customers));
+  persistAppState();
+}
+function getDeletedCustomerIds() {
+  return safeReadJson('wm_deleted_customers', []);
+}
+function saveDeletedCustomerIds(ids) {
+  safeSet('wm_deleted_customers', JSON.stringify([...new Set(ids)]));
+  persistAppState();
+}
+function markCustomerDeleted(customerId) {
+  const ids = getDeletedCustomerIds();
+  if (!ids.includes(customerId)) ids.push(customerId);
+  saveDeletedCustomerIds(ids);
+}
+function clearDeletedCustomerMark(customerId) {
+  saveDeletedCustomerIds(getDeletedCustomerIds().filter(id => id !== customerId));
+}
+function loadCustomersFromLocal() {
+  const stored = safeReadJson('wm_customers', []);
+  const deletedIds = getDeletedCustomerIds();
+  if (stored.length) customers = stored.map(normalizeCustomerRecord).filter(customer => !deletedIds.includes(customer.id));
+  else customers = customers.filter(customer => !deletedIds.includes(customer.id));
+}
+function normalizeCustomerRecord(raw = {}) {
+  return {
+    id: String(raw.id || nextCustomerId()),
+    name: raw.name || '—',
+    phone: raw.phone || '—',
+    email: raw.email || '',
+    address: raw.address || '',
+    password: raw.password || '',
+    since: raw.since || new Date().toISOString().slice(0, 7),
+    totalOrders: parseInt(raw.totalOrders, 10) || 0,
+    totalSpent: parseFloat(raw.totalSpent) || 0,
+    lastOrder: raw.lastOrder || '—',
+    notes: raw.notes || '',
+    rewarded: raw.rewarded === true || raw.rewarded === 'true'
+  };
+}
+function nextCustomerId() {
+  const maxId = customers.reduce((max, c) => {
+    const num = parseInt(String(c.id || '').replace(/\D/g, ''), 10);
+    return Number.isFinite(num) ? Math.max(max, num) : max;
+  }, 0);
+  return 'C' + String(maxId + 1).padStart(3, '0');
+}
+function refreshCustomerViews() {
+  saveCustomersLocal();
+  updateStats();
+  renderDashboard();
+  renderCustomers();
+  renderRewards();
+}
+function custCard(c) {
+  const tier = getTier(c);
+  const color = getAvatarColor(c.name);
+  const isLoyal = c.totalOrders >= 20;
+  return `<div class="cust-card ${isLoyal ? 'loyal' : ''}" onclick="openCustModal('${c.id}')">
+    <div class="cust-head">
+      <div class="cust-avatar" style="background:${color};">${initials(c.name)}</div>
+      <div style="flex:1;">
+        <div class="cust-info-name">${c.name}</div>
+        <div class="cust-info-phone">${c.phone}${c.email ? ' · ' + c.email : ''}</div>
+        <div class="cust-info-since">Since ${c.since}</div>
+      </div>
+      <div style="text-align:right;">
+        <span class="tier-badge ${tier.cls}">${tier.label}</span>
+        ${isLoyal ? '<div class="loyal-tag" style="margin-top:4px;">⭐ Loyal</div>' : ''}
+      </div>
+    </div>
+    <div class="cust-stats">
+      <div class="cs-item"><div class="cs-val" style="color:var(--blue);">${c.totalOrders}</div><div class="cs-lbl">Orders</div></div>
+      <div class="cs-item"><div class="cs-val" style="color:var(--amber);">₱${(c.totalSpent/1000).toFixed(1)}k</div><div class="cs-lbl">Spent</div></div>
+      <div class="cs-item"><div class="cs-val" style="color:var(--teal);font-size:14px;">${c.rewarded ? '✓' : '—'}</div><div class="cs-lbl">Rewarded</div></div>
+    </div>
+  </div>`;
+}
+function renderCustomers() {
+  const q = (document.getElementById('custSearch')?.value || '').toLowerCase();
+  let list = q ? customers.filter(c => c.name.toLowerCase().includes(q) || c.phone.includes(q) || (c.email||'').toLowerCase().includes(q)) : customers;
+  list = [...list].sort((a,b) => b.totalOrders - a.totalOrders);
+  const table = document.getElementById('customersTableBody');
+  if (table) {
+    table.innerHTML = list.length ? list.map(c => `
+      <tr>
+        <td>
+          <div class="customer-name-cell">
+            <div class="cust-avatar" style="background:${getAvatarColor(c.name)};width:36px;height:36px;font-size:13px;">${initials(c.name)}</div>
+            <div>
+              <div style="font-weight:700;color:var(--adm-text);">${c.name}</div>
+              <div style="font-size:11px;color:var(--muted);">${c.address || 'No address yet'}</div>
+            </div>
+          </div>
+        </td>
+        <td>${c.phone}</td>
+        <td>${c.email || '—'}</td>
+        <td>${c.since}</td>
+        <td>${c.totalOrders}</td>
+        <td>₱${Number(c.totalSpent || 0).toLocaleString()}</td>
+        <td><span class="inline-tag ${c.rewarded ? 'yes' : 'no'}">${c.rewarded ? 'Rewarded' : 'Pending'}</span></td>
+        <td>
+          <div class="customer-table-actions">
+            <button class="mini-btn primary" onclick="openCustModal('${c.id}')">Profile</button>
+            <button class="mini-btn" onclick="openAddCustomerModal('${c.id}')">Edit</button>
+            <button class="mini-btn danger" onclick="promptDelete('customer','${c.id}')">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">No customers found</td></tr>`;
+  }
+  const grid = document.getElementById('customersGrid');
+  if (grid) grid.innerHTML = list.length ? list.map(c => custCard(c)).join('') : `<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No customers found</div></div>`;
+}
+function openCustModal(id) {
+  const c = customers.find(x => x.id === id); if (!c) return;
+  activeCustId = id;
+  const tier = getTier(c);
+  const color = getAvatarColor(c.name);
+  const custOrders = orders.filter(o => o.custId === id);
+  document.getElementById('cm-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
+      <div class="cust-avatar" style="background:${color};width:56px;height:56px;font-size:20px;">${initials(c.name)}</div>
+      <div>
+        <div style="font-family:var(--font-h);font-size:24px;letter-spacing:.03em;color:var(--adm-text);">${c.name}</div>
+        <div style="font-size:13px;color:var(--muted);">${c.phone}${c.email ? ' · ' + c.email : ''}</div>
+        <div style="margin-top:6px;display:flex;gap:6px;align-items:center;"><span class="tier-badge ${tier.cls}">${tier.label} Member</span>${c.rewarded ? '<span class="loyal-tag">🎁 Rewarded</span>' : ''}</div>
+      </div>
+    </div>
+    <div class="od-row"><span class="od-label">Customer Since</span><span class="od-val">${c.since}</span></div>
+    <div class="od-row"><span class="od-label">Total Orders</span><span class="od-val" style="color:var(--blue);">${c.totalOrders} orders</span></div>
+    <div class="od-row"><span class="od-label">Total Spent</span><span class="od-val" style="color:var(--amber);">₱${c.totalSpent.toLocaleString()}</span></div>
+    <div class="od-row"><span class="od-label">Last Order</span><span class="od-val">${c.lastOrder}</span></div>
+    ${c.address ? `<div class="od-row"><span class="od-label">Address</span><span class="od-val">${c.address}</span></div>` : ''}
+    ${c.notes ? `<div class="od-row"><span class="od-label">Notes</span><span class="od-val">${c.notes}</span></div>` : ''}
+    <div style="margin-top:16px;font-family:var(--font-h);font-size:16px;letter-spacing:.03em;margin-bottom:10px;color:var(--adm-text);">Recent Orders</div>
+    ${custOrders.length ? custOrders.slice(0,4).map(o => {const p=products.find(x=>x.id===o.productId);return`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;"><span class="order-id">${o.id}</span><span style="color:var(--muted);">${o.qty}× ${p?p.name:'Item'}</span><span style="color:var(--amber);">₱${orderTotal(o)}</span><span class="status-badge s-${o.status}">${STATUS_LABELS[o.status]}</span></div>`;}).join('') : '<div style="color:var(--muted);font-size:13px;padding:12px 0;">No orders yet.</div>'}`;
+  document.getElementById('custModal').classList.add('open');
+}
+function openRewardFromCust() { document.getElementById('custModal').classList.remove('open'); openSendRewardModal(activeCustId); }
+function editCustomerFromProfile() {
+  if (!activeCustId) return;
+  document.getElementById('custModal').classList.remove('open');
+  openAddCustomerModal(activeCustId);
+}
+function deleteActiveCustomer() {
+  if (!activeCustId) return;
+  promptDelete('customer', activeCustId);
+}
+
+/* REWARDS */
+function renderRewards() {
+  const loyal = customers.filter(c => c.totalOrders >= 20).sort((a,b) => b.totalOrders - a.totalOrders);
+  const alreadyRewarded = customers.filter(c => c.rewarded).length;
+  const gold = customers.filter(c => c.totalOrders >= 50).length;
+  const rs = document.getElementById('rewardsStats');
+  if (rs) rs.innerHTML = `
+    <div class="reward-stat"><div class="num" style="color:var(--amber);">${loyal.length}</div><div class="lbl">Loyal Customers</div></div>
+    <div class="reward-stat"><div class="num" style="color:var(--teal);">${alreadyRewarded}</div><div class="lbl">Rewarded</div></div>
+    <div class="reward-stat"><div class="num" style="color:var(--amber);">${gold}</div><div class="lbl">Gold Members</div></div>`;
+  const lg = document.getElementById('loyalGrid');
+  if (lg) lg.innerHTML = loyal.length ? loyal.map(c => custCard(c)).join('') : `<div class="empty"><div class="empty-icon">🏆</div><div class="empty-text">No loyal customers yet</div></div>`;
+}
+function openSendRewardModal(preselect = null) {
+  const rm = document.getElementById('rm-cust');
+  if (rm) rm.innerHTML = customers.map(c => `<option value="${c.id}"${c.id === preselect ? ' selected' : ''}>${c.name} (${c.totalOrders} orders)</option>`).join('');
+  document.getElementById('rm-msg').value = '';
+  document.getElementById('rewardModal').classList.add('open');
+}
+function sendReward() {
+  const cid = document.getElementById('rm-cust').value;
+  const type = document.getElementById('rm-type').value;
+  const c = customers.find(x => x.id === cid); if (!c) return;
+  c.rewarded = true;
+  document.getElementById('rewardModal').classList.remove('open');
+  const labels = {free:'Free Gallon',discount:'10% Discount',priority:'Priority Delivery',gift:'Holiday Gift Pack',custom:'Custom Message'};
+  showAdminToast('🎁 ' + labels[type] + ' sent to ' + c.name, 'success');
+  refreshCustomerViews();
+}
+
+/* ADD ORDER */
+function calcAddOrderTotal() {
+  const pid = document.getElementById('ao-product').value;
+  const qty = parseInt(document.getElementById('ao-qty').value) || 0;
+  const p = products.find(x => x.id === pid);
+  const prev = document.getElementById('ao-preview');
+  if (!p || !qty) { if (prev) prev.innerHTML = 'Select a product and quantity to see total'; return; }
+  const total = qty * p.price + 30;
+  if (prev) prev.innerHTML = `₱${p.price} × ${qty} + ₱30 delivery = <b style="color:var(--amber);">₱${total.toLocaleString()}</b>`;
+}
+function submitAddOrder() {
+  const name = document.getElementById('ao-name').value.trim();
+  const phone = document.getElementById('ao-phone').value.trim();
+  const addr = document.getElementById('ao-addr').value.trim();
+  const pid = document.getElementById('ao-product').value;
+  const qty = parseInt(document.getElementById('ao-qty').value) || 0;
+  const payment = document.getElementById('ao-pay').value;
+  const payStatus = document.getElementById('ao-paystatus').value;
+  const receiver = document.getElementById('ao-receiver').value.trim();
+  const notes = document.getElementById('ao-notes').value.trim();
+  if (!name || !phone || !addr || !pid || !qty) { showAdminToast('⚠ Fill in all required fields', ''); return; }
+  let c = customers.find(x => x.phone === phone);
+  if (!c) {
+    c = {id:'C'+String(customers.length+1).padStart(3,'0'),name,phone,email:'',address:addr,since:new Date().toISOString().slice(0,7),totalOrders:0,totalSpent:0,lastOrder:todayStr(),notes:'',rewarded:false};
+    customers.push(c);
+    syncCustomerToSheet(c);
+  }
+  const newId = 'WM-' + String(2046 + orders.length);
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});
+  orders.unshift({id:newId,custId:c.id,name,phone,address:addr,productId:pid,qty,payment,payStatus,receivedBy:receiver||'Admin',notes,status:'pending',time:timeStr,date:todayStr()});
+  saveOrdersLocal();
+  persistAppState();
+  showAdminToast('✓ Order ' + newId + ' created', 'success');
+  resetAddOrder(); refreshCustomerViews();
+}
+function resetAddOrder() {
+  ['ao-name','ao-phone','ao-addr','ao-notes','ao-receiver'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const qty = document.getElementById('ao-qty'); if (qty) qty.value = 1;
+  const prev = document.getElementById('ao-preview'); if (prev) prev.innerHTML = 'Select a product and quantity to see total';
+}
+
+/* BRANDING */
+function handleLogoUpload(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    BRANDING.logoUrl = e.target.result;
+    const box = document.getElementById('logoPreviewBox');
+    if (box) box.innerHTML = `<img src="${BRANDING.logoUrl}" style="max-width:100%;max-height:100%;object-fit:contain;"/><input type="file" id="logoFileInput" accept="image/*" onchange="handleLogoUpload(this)" style="display:none;"/>`;
+    applyBranding();
+  };
+  reader.readAsDataURL(file);
+}
+function saveBranding() {
+  BRANDING.name = document.getElementById('brand-name').value.trim() || BRANDING.name;
+  BRANDING.tagline = document.getElementById('brand-tagline').value.trim() || BRANDING.tagline;
+  safeSet('wm_branding', JSON.stringify(BRANDING));
+  persistAppState();
+  applyBranding();
+  showAdminToast('✓ Branding saved', 'success');
+}
+function applyBranding() {
+  const sbn = document.getElementById('sb-logo-name'); if (sbn) sbn.textContent = BRANDING.name;
+  const nl = document.getElementById('navLogoName'); if (nl) nl.innerHTML = BRANDING.name + '<span class="sub-name">Purified Water Station</span>';
+  const fb = document.getElementById('footerBrandName'); if (fb) fb.textContent = BRANDING.name;
+  const ft = document.getElementById('footerTagline'); if (ft) ft.textContent = BRANDING.tagline;
+  const fp1 = document.getElementById('footerPhone1'); if (fp1) fp1.textContent = BRANDING.phone;
+  const fp2 = document.getElementById('footerPhone2'); if (fp2) fp2.textContent = BRANDING.phone2;
+  const fe = document.getElementById('footerEmail'); if (fe) fe.textContent = BRANDING.email;
+  document.title = BRANDING.name + (document.body.classList.contains('admin-mode') ? ' — Admin Panel' : ' – Purified Water Refilling Station');
+}
+function saveContact() {
+  BRANDING.phone = document.getElementById('brand-phone').value.trim();
+  BRANDING.phone2 = document.getElementById('brand-phone2').value.trim();
+  BRANDING.email = document.getElementById('brand-email').value.trim();
+  BRANDING.address = document.getElementById('brand-address').value.trim();
+  safeSet('wm_branding', JSON.stringify(BRANDING));
+  persistAppState();
+  applyBranding();
+  showAdminToast('✓ Contact info saved', 'success');
+}
+function saveCredentials() {
+  const curr = document.getElementById('brand-curr-pw').value;
+  const newPw = document.getElementById('brand-new-pw').value;
+  const conf = document.getElementById('brand-confirm-pw').value;
+  const newUser = document.getElementById('brand-user').value.trim();
+  if (curr !== ADMIN_CREDS.pass) { showAdminToast('⚠ Current password incorrect', ''); return; }
+  if (newPw && newPw !== conf) { showAdminToast('⚠ New passwords do not match', ''); return; }
+  if (newUser) ADMIN_CREDS.user = newUser;
+  if (newPw) ADMIN_CREDS.pass = newPw;
+  safeSet('wm_admin_creds', JSON.stringify(ADMIN_CREDS));
+  persistAppState();
+  ['brand-curr-pw','brand-new-pw','brand-confirm-pw'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  showAdminToast('✓ Credentials updated', 'success');
+}
+
+/* DELETE */
+function promptDelete(type, id) {
+  pendingDeleteType = type; pendingDeleteId = id;
+  const msgs = {order: `Delete order ${id}? This cannot be undone.`, product: `Delete product? This cannot be undone.`, customer: 'Delete this customer profile? Existing order history will stay, but the customer account will be removed.'};
+  const dm = document.getElementById('delete-msg'); if (dm) dm.textContent = msgs[type] || 'Are you sure?';
+  document.getElementById('deleteModal').classList.add('open');
+}
+function confirmDelete() {
+  if (pendingDeleteType === 'order') {
+    orders = orders.filter(o => o.id !== pendingDeleteId);
+    saveOrdersLocal();
+    persistAppState();
+    updateStats();
+    renderDashboard();
+    renderOrders();
+    showAdminToast('Order deleted and saved', 'success');
+  }
+  if (pendingDeleteType === 'product') { products = products.filter(p => p.id !== pendingDeleteId); renderAdmProducts(); populateProductDropdown(); showAdminToast('Product deleted', 'err'); }
+  if (pendingDeleteType === 'customer') {
+    customers = customers.filter(c => c.id !== pendingDeleteId);
+    markCustomerDeleted(pendingDeleteId);
+    if (activeCustId === pendingDeleteId) {
+      document.getElementById('custModal').classList.remove('open');
+      activeCustId = null;
+    }
+    deleteCustomerFromSheet(pendingDeleteId);
+    refreshCustomerViews();
+    showAdminToast('Customer deleted and saved', 'success');
+  }
+  document.getElementById('deleteModal').classList.remove('open');
+  pendingDeleteType = pendingDeleteId = null;
+}
+
+/* PAGE EDITOR */
+function bootPublicView() {
+  const safeRun = fn => { try { fn(); } catch (err) { console.warn('Public view hook skipped:', err); } };
+  safeRun(renderCategoryTabs);
+  safeRun(renderPubProducts);
+  safeRun(updateCartUI);
+  safeRun(applyAboutSettings);
+  safeRun(applyBranding);
+  safeRun(updateNavAccount);
+  if (window.location.protocol === 'file:') {
+    setTimeout(() => showPubToast('Open this page through localhost for reliable saving. Raw file mode can lose changes.', 'info'), 700);
+  }
+}
+function applySavedPublicPage() {
+  const saved = safeGet('wm_public_page_html', '');
+  if (!saved) return;
+  const view = document.getElementById('publicView');
+  if (view) view.innerHTML = saved;
+}
+function loadPublicPageEditor() {
+  const editor = document.getElementById('page-html-editor');
+  const view = document.getElementById('publicView');
+  if (editor && view) editor.value = view.innerHTML.trim();
+}
+function previewPublicPageEditor() {
+  const editor = document.getElementById('page-html-editor');
+  const view = document.getElementById('publicView');
+  if (!editor || !view) return;
+  view.innerHTML = editor.value;
+  bootPublicView();
+  showAdminToast('Preview updated on the public page', 'success');
+}
+function savePublicPageEditor() {
+  const editor = document.getElementById('page-html-editor');
+  const view = document.getElementById('publicView');
+  if (!editor || !view) return;
+  const html = editor.value.trim();
+  if (!html) {
+    showAdminToast('⚠ Public page HTML cannot be empty', 'warn');
+    return;
+  }
+  safeSet('wm_public_page_html', html);
+  persistAppState();
+  view.innerHTML = html;
+  bootPublicView();
+  loadPublicPageEditor();
+  showAdminToast('✓ Public page saved', 'success');
+}
+function resetPublicPageEditor() {
+  const view = document.getElementById('publicView');
+  const editor = document.getElementById('page-html-editor');
+  if (!view || !DEFAULT_PUBLIC_VIEW_HTML) return;
+  safeRemove('wm_public_page_html');
+  persistAppState();
+  view.innerHTML = DEFAULT_PUBLIC_VIEW_HTML;
+  bootPublicView();
+  if (editor) editor.value = DEFAULT_PUBLIC_VIEW_HTML.trim();
+  showAdminToast('✓ Page reset to original layout', 'success');
+}
+
+/* ADMIN TOAST */
+function showAdminToast(msg, type = '') {
+  const t = document.getElementById('adminToast');
+  if (!t) return;
+  t.textContent = msg;
+  t.className = 'show saved ' + (type === 'success' ? 'success' : type === 'warn' ? 'warn' : type === 'err' ? 'err' : '');
+  clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+/* MODAL CLOSE ON BG */
+document.querySelectorAll('.adm-modal-overlay').forEach(m => {
+  m.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('open'); });
+});
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+let admClockIntervalId = null;
+function init() {
+  updateStats(); renderDashboard(); renderAdmProducts(); populateProductDropdown();
+  applyBranding();
+  if (admClockIntervalId) clearInterval(admClockIntervalId);
+  admClockIntervalId = setInterval(updateClock, 1000);
+  updateClock();
+  // Load branding inputs
+  const bn = document.getElementById('brand-name'); if (bn) bn.value = BRANDING.name;
+  const bt = document.getElementById('brand-tagline'); if (bt) bt.value = BRANDING.tagline;
+  const bp1 = document.getElementById('brand-phone'); if (bp1) bp1.value = BRANDING.phone;
+  const bp2 = document.getElementById('brand-phone2'); if (bp2) bp2.value = BRANDING.phone2;
+  const be = document.getElementById('brand-email'); if (be) be.value = BRANDING.email;
+  const ba = document.getElementById('brand-address'); if (ba) ba.value = BRANDING.address;
+  const su = document.getElementById('sheet-url-input'); if (su) su.value = SHEET_URL;
+  const sl = document.getElementById('sheet-link-input'); if (sl) sl.value = SHEET_LINK;
+  loadPublicPageEditor();
+}
+
+DEFAULT_PUBLIC_VIEW_HTML = document.getElementById('publicView')?.innerHTML || '';
+loadPersistedState();
+applySavedPublicPage();
+bootPublicView();
+loadOrdersFromLocal();
+loadCustomersFromLocal();
+currentUser = safeReadJson('wm_current_user', null);
+updateNavAccount();
+if (ADMIN_SESSION) activateAdminMode();
+</script>
+</body>
+</html>
